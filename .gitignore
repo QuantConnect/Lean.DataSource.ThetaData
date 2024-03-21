@@ -45,7 +45,6 @@
 *Engine/bin/Debug/cache/data/*.zip
 */obj/*
 */bin/*
-*Data/*
 *Docker/*
 */Docker/*
 *Algorithm.Python/Lib/*
