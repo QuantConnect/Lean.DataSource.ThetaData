@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<Configuration Condition=" '$(Configuration)' == '' ">Release</Configuration>
+		<Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+		<TargetFramework>net6.0</TargetFramework>
+		<IsPackable>false</IsPackable>
+		<TestProjectType>UnitTest</TestProjectType>
+		<OutputPath>bin\$(Configuration)\</OutputPath>
+		<Product>QuantConnect.Lean.DataSource.ThetaData.Tests</Product>
+		<AssemblyName>QuantConnect.Lean.DataSource.ThetaData.Tests</AssemblyName>
+		<RootNamespace>QuantConnect.Lean.DataSource.ThetaData.Tests</RootNamespace>
+		<AssemblyTitle>QuantConnect.Lean.DataSource.ThetaData.Tests</AssemblyTitle>
+		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.NET.Test.Sdk" Version="16.9.4" />
+		<PackageReference Include="NUnit" Version="3.13.3" />
+		<PackageReference Include="NUnit3TestAdapter" Version="4.4.2">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="NUnit.Analyzers" Version="3.6.1" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\QuantConnect.ThetaData\QuantConnect.DataSource.ThetaData.csproj" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<None Remove="config.json" />
+		<Content Include="config.json">
+			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+		</Content>
+	</ItemGroup>
+</Project>
