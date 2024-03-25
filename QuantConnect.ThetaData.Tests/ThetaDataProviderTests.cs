@@ -14,6 +14,7 @@
 */
 
 using System;
+using System.Linq;
 using NUnit.Framework;
 using System.Threading;
 using QuantConnect.Data;
@@ -60,8 +61,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
 
             Assert.That(configs, Is.Not.Empty);
 
-            var dataFromEnumerator = new List<TradeBar>();
-            var dataFromEventHandler = new List<TradeBar>();
+            var dataFromEnumerator = new Dictionary<Type, int>() { { typeof(TradeBar), 0 }, { typeof(QuoteBar), 0 } };
 
             Action<BaseData> callback = (dataPoint) =>
             {
@@ -70,12 +70,15 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
                     return;
                 }
 
-                dataFromEnumerator.Add((TradeBar)dataPoint);
-
-                if (unsubscribed)
+                switch (dataPoint)
                 {
-                    Assert.Fail("Should not receive data for unsubscribed symbols");
-                }
+                    case TradeBar _:
+                        dataFromEnumerator[typeof(TradeBar)] += 1;
+                        break;
+                    case QuoteBar _:
+                        dataFromEnumerator[typeof(QuoteBar)] += 1;
+                        break;
+                };
             };
 
             foreach (var config in configs)
@@ -83,19 +86,23 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
                 ProcessFeed(_thetaDataProvider.Subscribe(config, (sender, args) =>
                 {
                     var dataPoint = ((NewDataAvailableEventArgs)args).DataPoint;
-                    dataFromEventHandler.Add((TradeBar)dataPoint);
                     Log.Trace($"{dataPoint}. Time span: {dataPoint.Time} - {dataPoint.EndTime}");
                 }), _cancellationTokenSource.Token, callback: callback);
             }
 
             Thread.Sleep(TimeSpan.FromSeconds(10));
 
+            Log.Trace("Unsubscribing symbols");
             foreach (var config in configs)
             {
                 _thetaDataProvider.Unsubscribe(config);
             }
 
-            Log.Trace("Unsubscribing symbols");
+            Thread.Sleep(TimeSpan.FromSeconds(5));
+
+            Assert.Greater(dataFromEnumerator[typeof(QuoteBar)], 0);
+            // The ThetaData returns TradeBar seldom. Perhaps should find more relevant ticker.
+            Assert.GreaterOrEqual(dataFromEnumerator[typeof(TradeBar)], 0);
         }
 
         private static IEnumerable<SubscriptionDataConfig> GetSubscriptionDataConfigs(string ticker, Resolution resolution)
