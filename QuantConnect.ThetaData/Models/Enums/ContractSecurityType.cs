@@ -14,31 +14,14 @@
 */
 
 using Newtonsoft.Json;
+using Newtonsoft.Json.Converters;
+using System.Runtime.Serialization;
 
-namespace QuantConnect.Lean.DataSource.ThetaData.Models.WebSocket
+namespace QuantConnect.Lean.DataSource.ThetaData.Models.Enums;
+
+[JsonConverter(typeof(StringEnumConverter))]
+public enum ContractSecurityType
 {
-
-    public class WebSocketResponse
-    {
-        [JsonProperty("header")]
-        public WebSocketHeader Header { get; }
-
-        [JsonProperty("contract")]
-        public WebSocketContract? Contract { get; }
-
-        [JsonProperty("trade")]
-        public WebSocketTrade? Trade { get; }
-
-        [JsonProperty("quote")]
-        public WebSocketQuote? Quote { get; }
-
-        public WebSocketResponse(WebSocketHeader header, WebSocketContract? contract, WebSocketTrade? trade, WebSocketQuote? quote)
-        {
-            Header = header;
-            Contract = contract;
-            Trade = trade;
-            Quote = quote;
-
-        }
-    }
+    [EnumMember(Value = "OPTION")]
+    Option = 0,
 }
