@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -37,6 +37,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         private readonly IDataAggregator _dataAggregator;
 
         /// <summary>
+        /// Provides the TheData mapping between Lean symbols and brokerage specific symbols.
+        /// </summary>
+        private readonly ThetaDataSymbolMapper _symbolMapper;
+
+        /// <summary>
         /// Helper class is doing to subscribe / unsubscribe process.
         /// </summary>
         private readonly EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
@@ -52,7 +57,9 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                     Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(Config.Get("data-aggregator", "QuantConnect.Lean.Engine.DataFeeds.AggregationManager"), forceTypeNameOnExisting: false);
             }
 
-            ThetaDataWebSocketClientWrapper webSocketClient = new(OnMessage);
+            _symbolMapper = new ThetaDataSymbolMapper();
+
+            ThetaDataWebSocketClientWrapper webSocketClient = new(_symbolMapper, OnMessage);
             _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
             _subscriptionManager.SubscribeImpl += (symbols, _) => webSocketClient.Subscribe(symbols);
             _subscriptionManager.UnsubscribeImpl += (symbols, _) => webSocketClient.Unsubscribe(symbols);

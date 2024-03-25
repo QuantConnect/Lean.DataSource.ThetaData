@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -48,6 +48,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         private readonly Action<string> _messageHandler;
 
         /// <summary>
+        /// Provides the ThetaData mapping between Lean symbols and brokerage specific symbols.
+        /// </summary>
+        private readonly ISymbolMapper _symbolMapper;
+
+        /// <summary>
         /// Represents a way of tracking streaming requests made.
         /// The field should be increased for each new stream request made. 
         /// </summary>
@@ -56,11 +61,13 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <summary>
         /// Initializes a new instance of the <see cref="ThetaDataWebSocketClientWrapper"/>
         /// </summary>
+        /// <param name="symbolMapper">Provides the mapping between Lean symbols and brokerage specific symbols.</param>
         /// <param name="messageHandler">The method that handles messages received from the WebSocket client.</param>
-        public ThetaDataWebSocketClientWrapper(Action<string> messageHandler)
+        public ThetaDataWebSocketClientWrapper(ISymbolMapper symbolMapper, Action<string> messageHandler)
         {
             Initialize(BaseUrl);
 
+            _symbolMapper = symbolMapper;
             _messageHandler = messageHandler;
 
             Closed += OnClosed;
@@ -92,13 +99,10 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
         private IEnumerable<string> GetContractSubscriptionMessage(bool isSubscribe, Symbol symbol)
         {
-            var ticker = symbol.ID.Symbol;
-            var expirationDate = symbol.ID.Date.ToString("yyyyMMdd");
-            var strikePrice = Math.Truncate(symbol.ID.StrikePrice * 1000m).ToStringInvariant();
-            var optionRight = symbol.ID.OptionRight == OptionRight.Call ? "C" : "P";
+            var brokerageSymbol = _symbolMapper.GetBrokerageSymbol(symbol).Split(',');
             foreach (var channel in Channels)
             {
-                yield return GetMessage(isSubscribe, channel, ticker, expirationDate, strikePrice, optionRight);
+                yield return GetMessage(isSubscribe, channel, brokerageSymbol[0], brokerageSymbol[1], brokerageSymbol[2], brokerageSymbol[3]);
             }
         }
 
