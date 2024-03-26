@@ -88,6 +88,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                     Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(Config.Get("data-aggregator", "QuantConnect.Lean.Engine.DataFeeds.AggregationManager"), forceTypeNameOnExisting: false);
             }
 
+            var restApiClient = new ThetaDataRestApiClient();
             _symbolMapper = new ThetaDataSymbolMapper();
 
             _webSocketClient = new ThetaDataWebSocketClientWrapper(_symbolMapper, OnMessage);
