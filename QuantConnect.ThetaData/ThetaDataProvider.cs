@@ -1,4 +1,4 @@
-/*
+﻿/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -13,14 +13,12 @@
  * limitations under the License.
 */
 
-
 using NodaTime;
 using Newtonsoft.Json;
 using QuantConnect.Data;
 using QuantConnect.Util;
 using QuantConnect.Packets;
 using QuantConnect.Logging;
-using System.Globalization;
 using QuantConnect.Securities;
 using QuantConnect.Interfaces;
 using QuantConnect.Data.Market;
@@ -61,11 +59,17 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         private readonly EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
 
         /// <summary>
+        /// Represents an instance of a WebSocket client wrapper for ThetaData.net.
+        /// </summary>
+        private readonly ThetaDataWebSocketClientWrapper _webSocketClient;
+
+        /// <summary>
         /// Ensures thread-safe synchronization when updating aggregation tick data, such as quotes or trades.
         /// </summary>
         private object _lock = new object();
 
-        public bool IsConnected => throw new NotImplementedException();
+        /// <inheritdoc />
+        public bool IsConnected => _webSocketClient.IsOpen;
 
         /// <summary>
         /// Initializes a new instance of the <see cref="ThetaDataProvider"/>
@@ -81,10 +85,10 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
             _symbolMapper = new ThetaDataSymbolMapper();
 
-            ThetaDataWebSocketClientWrapper webSocketClient = new(_symbolMapper, OnMessage);
+            _webSocketClient = new ThetaDataWebSocketClientWrapper(_symbolMapper, OnMessage);
             _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
-            _subscriptionManager.SubscribeImpl += (symbols, _) => webSocketClient.Subscribe(symbols);
-            _subscriptionManager.UnsubscribeImpl += (symbols, _) => webSocketClient.Unsubscribe(symbols);
+            _subscriptionManager.SubscribeImpl += (symbols, _) => _webSocketClient.Subscribe(symbols);
+            _subscriptionManager.UnsubscribeImpl += (symbols, _) => _webSocketClient.Unsubscribe(symbols);
         }
 
         public void Dispose()

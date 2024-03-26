@@ -21,7 +21,7 @@ using QuantConnect.Configuration;
 namespace QuantConnect.Lean.DataSource.ThetaData
 {
     /// <summary>
-    /// WebSocket client wrapper for ThetaData.net
+    /// Provides a WebSocket client wrapper for ThetaData.net.
     /// </summary>
     public class ThetaDataWebSocketClientWrapper : WebSocketClientWrapper
     {
