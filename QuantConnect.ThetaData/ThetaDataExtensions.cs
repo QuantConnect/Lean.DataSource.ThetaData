@@ -14,8 +14,6 @@
 */
 
 using System.Globalization;
-using QuantConnect.Lean.DataSource.ThetaData.Models.Enums;
-using QuantConnect.Lean.DataSource.ThetaData.Models.WebSocket;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
 {
