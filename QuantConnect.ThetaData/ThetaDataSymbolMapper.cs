@@ -49,14 +49,51 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
         public Symbol GetLeanSymbol(string brokerageSymbol, SecurityType securityType, string market, DateTime expirationDate = default, decimal strike = 0, OptionRight optionRight = OptionRight.Call)
         {
-            throw new NotImplementedException();
+            return GetLeanSymbol(brokerageSymbol, securityType, market, OptionStyle.American, expirationDate, strike, optionRight);
+        }
+
+        public Symbol GetLeanSymbol(string brokerageSymbol, SecurityType securityType, string market, OptionStyle optionStyle,
+            DateTime expirationDate = new DateTime(), decimal strike = 0, OptionRight optionRight = OptionRight.Call,
+            Symbol? underlying = null)
+        {
+            if (string.IsNullOrWhiteSpace(brokerageSymbol))
+            {
+                throw new ArgumentException("Invalid symbol: " + brokerageSymbol);
+            }
+
+            var underlyingSymbolStr = underlying?.Value ?? brokerageSymbol;
+            var leanSymbol = default(Symbol);
+            switch (securityType)
+            {
+                case SecurityType.Option:
+                    leanSymbol = Symbol.CreateOption(underlyingSymbolStr, market, optionStyle, optionRight, strike, expirationDate);
+                    break;
+
+                case SecurityType.IndexOption:
+                    underlying ??= Symbol.Create(underlyingSymbolStr, SecurityType.Index, market);
+                    leanSymbol = Symbol.CreateOption(underlying, brokerageSymbol, market, optionStyle, optionRight, strike, expirationDate);
+                    break;
+
+                case SecurityType.Equity:
+                    leanSymbol = Symbol.Create(brokerageSymbol, securityType, market);
+                    break;
+
+                case SecurityType.Index:
+                    leanSymbol = Symbol.Create(brokerageSymbol, securityType, market);
+                    break;
+
+                default:
+                    throw new Exception($"PolygonSymbolMapper.GetLeanSymbol(): unsupported security type: {securityType}");
+            }
+
+            return leanSymbol;
         }
 
         private string GetBrokerageTicker(string ticker, DateTime expirationDate, decimal strikePrice, OptionRight optionRight)
         {
             return GetBrokerageTicker(
                 ticker,
-                expirationDate.ToString("yyyyMMdd"),
+                expirationDate.ToStringInvariant("yyyyMMdd"),
                 Math.Truncate(strikePrice * 1000m),
                 optionRight == OptionRight.Call ? "C" : "P");
         }

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -23,6 +23,7 @@ using QuantConnect.Securities;
 using QuantConnect.Interfaces;
 using QuantConnect.Data.Market;
 using QuantConnect.Configuration;
+using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Enums;
 using QuantConnect.Lean.DataSource.ThetaData.Models.WebSocket;
 
@@ -90,6 +91,8 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
             var restApiClient = new ThetaDataRestApiClient();
             _symbolMapper = new ThetaDataSymbolMapper();
+
+            _optionChainProvider = new CachingOptionChainProvider(new ThetaDataOptionChainProvider(_symbolMapper, restApiClient));
 
             _webSocketClient = new ThetaDataWebSocketClientWrapper(_symbolMapper, OnMessage);
             _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
