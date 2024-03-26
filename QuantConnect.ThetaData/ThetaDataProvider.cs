@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -67,6 +67,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// Ensures thread-safe synchronization when updating aggregation tick data, such as quotes or trades.
         /// </summary>
         private object _lock = new object();
+
+        /// <summary>
+        /// The time provider instance. Used for improved testability
+        /// </summary>
+        protected virtual ITimeProvider TimeProvider { get; } = RealTimeProvider.Instance;
 
         /// <inheritdoc />
         public bool IsConnected => _webSocketClient.IsOpen;
