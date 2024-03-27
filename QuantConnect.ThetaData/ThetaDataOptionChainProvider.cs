@@ -74,7 +74,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             var underlying = symbol.SecurityType.IsOption() ? symbol.Underlying : symbol;
             var optionsSecurityType = underlying.SecurityType == SecurityType.Index ? SecurityType.IndexOption : SecurityType.Option;
 
-            var strikeRequest = new RestRequest("/strikes", Method.GET);
+            var strikeRequest = new RestRequest("/list/strikes", Method.GET);
             strikeRequest.AddQueryParameter("root", underlying.Value);
 
             foreach (var expiryDateStr in GetExpirationDates(underlying.Value))
@@ -107,7 +107,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <returns>An enumerable collection of expiration dates in string format (e.g., "20240303" for March 3, 2024).</returns>
         private IEnumerable<string> GetExpirationDates(string ticker)
         {
-            var request = new RestRequest("/expirations", Method.GET);
+            var request = new RestRequest("/list/expirations", Method.GET);
             request.AddQueryParameter("root", ticker);
 
             return _restClient.ExecuteRequest<BaseResponse<string>>(request).Response;

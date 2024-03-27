@@ -26,7 +26,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
     /// </summary>
     public class ThetaDataRestApiClient
     {
-        private readonly static string RestApiBaseUrl = Config.Get("polygon-api-url", "http://127.0.0.1:25510/v2/list");
+        private readonly static string RestApiBaseUrl = Config.Get("polygon-api-url", "http://127.0.0.1:25510/v2");
 
         private readonly RestClient _restClient;
 
