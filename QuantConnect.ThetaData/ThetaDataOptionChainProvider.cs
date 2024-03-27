@@ -79,7 +79,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
             foreach (var expiryDateStr in GetExpirationDates(underlying.Value))
             {
-                var expiryDate = expiryDateStr.ConvertFromThetaDataFormat();
+                var expiryDate = expiryDateStr.ConvertFromThetaDataDateFormat();
 
                 // Skip items with expiry dates before the requested minimum date.
                 if (expiryDate < requestedMinimumDate)

@@ -164,7 +164,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
         private void HandleQuoteMessage(Symbol symbol, WebSocketQuote webSocketQuote)
         {
-            var timeDateQuote = GetTickTime(symbol, webSocketQuote.Date.ConvertFromThetaDataFormat().AddMilliseconds(webSocketQuote.DayTimeMilliseconds));
+            var timeDateQuote = GetTickTime(symbol, webSocketQuote.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(webSocketQuote.DayTimeMilliseconds));
             // TODO: Exchange name.
             var tick = new Tick(timeDateQuote, symbol, webSocketQuote.BidCondition.ToStringInvariant(), string.Empty,
             bidSize: webSocketQuote.BidSize, bidPrice: webSocketQuote.BidPrice,
@@ -178,7 +178,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
         private void HandleTradeMessage(Symbol symbol, WebSocketTrade webSocketTrade)
         {
-            var timeDateTrade = GetTickTime(symbol, webSocketTrade.Date.ConvertFromThetaDataFormat().AddMilliseconds(webSocketTrade.DayTimeMilliseconds));
+            var timeDateTrade = GetTickTime(symbol, webSocketTrade.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(webSocketTrade.DayTimeMilliseconds));
             // TODO: Exchange name.
             var tick = new Tick(timeDateTrade, symbol, webSocketTrade.Condition.ToStringInvariant(), string.Empty, webSocketTrade.Size, webSocketTrade.Price);
             lock (_lock)
