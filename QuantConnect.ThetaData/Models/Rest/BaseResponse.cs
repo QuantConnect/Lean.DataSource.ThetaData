@@ -17,13 +17,13 @@ using Newtonsoft.Json;
 
 namespace QuantConnect.Lean.DataSource.ThetaData.Models.Rest
 {
-    public readonly struct RestResponse<T>
+    public readonly struct BaseResponse<T>
     {
         [JsonProperty("response")]
         public IEnumerable<T> Response { get; }
 
         [JsonConstructor]
-        public RestResponse(IEnumerable<T> response)
+        public BaseResponse(IEnumerable<T> response)
         {
             Response = response;
         }

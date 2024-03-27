@@ -16,7 +16,7 @@
 using RestSharp;
 using QuantConnect.Logging;
 using QuantConnect.Interfaces;
-using ThetaDataRestResponse = QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
+using QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
 {
@@ -89,7 +89,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
                 strikeRequest.AddOrUpdateParameter("exp", expiryDateStr);
 
-                foreach (var strike in _restClient.ExecuteRequest<ThetaDataRestResponse.RestResponse<int>>(strikeRequest).Response)
+                foreach (var strike in _restClient.ExecuteRequest<BaseResponse<decimal>>(strikeRequest).Response)
                 {
                     foreach (var right in optionRights)
                     {
@@ -110,7 +110,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             var request = new RestRequest("/expirations", Method.GET);
             request.AddQueryParameter("root", ticker);
 
-            return _restClient.ExecuteRequest<ThetaDataRestResponse.RestResponse<string>>(request).Response;
+            return _restClient.ExecuteRequest<BaseResponse<string>>(request).Response;
         }
     }
 }
