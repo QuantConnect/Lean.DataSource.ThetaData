@@ -18,33 +18,55 @@ using QuantConnect.Lean.DataSource.ThetaData.Models.Enums;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
 {
+    /// <summary>
+    /// Index Option Tickers: https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/s1ezbyfni6rw0-index-option-tickers
+    /// </summary>
     public class ThetaDataSymbolMapper : ISymbolMapper
     {
-        private Dictionary<string, Symbol> _cachedSymbols = new();
+        private Dictionary<string, Symbol> _dataProviderSymbolCache = new();
+        private Dictionary<Symbol, string> _leanSymbolCache = new();
 
         public string GetBrokerageSymbol(Symbol symbol)
         {
-            switch (symbol.SecurityType)
+            if (!_leanSymbolCache.TryGetValue(symbol, out var dataProviderTicker))
             {
-                case SecurityType.Option:
-                    var brokerageTicker = GetBrokerageTicker(symbol.ID.Symbol, symbol.ID.Date, symbol.ID.StrikePrice, symbol.ID.OptionRight);
-                    _cachedSymbols[brokerageTicker] = symbol;
-                    return brokerageTicker;
-                default:
-                    throw new NotImplementedException();
+                switch (symbol.SecurityType)
+                {
+                    case SecurityType.Equity:
+                    case SecurityType.Index:
+                        dataProviderTicker = symbol.Value;
+                        break;
+                    case SecurityType.Option:
+                    case SecurityType.IndexOption:
+                        dataProviderTicker = GetDataProviderOptionTickerByLeanSymbol(symbol);
+                        break;
+                    default:
+                        throw new NotImplementedException();
+                }
+
+                _dataProviderSymbolCache[dataProviderTicker] = symbol;
+                _leanSymbolCache[symbol] = dataProviderTicker;
             }
+
+            return dataProviderTicker;
         }
 
-        public Symbol GetLeanSymbolByBrokerageContract(string root, string date, decimal strike, ContractRight right)
+        public Symbol GetOptionLeanSymbol(string root, ContractSecurityType contractSecurityType, string dataProviderDate, decimal strike, string right)
         {
-            var brokerageTicker = GetBrokerageTicker(root, date, strike, right == ContractRight.Call ? "C" : "P");
+            var dataProviderTicker = GetDataProviderOptionTicker(root, dataProviderDate, strike, right);
 
-            if (_cachedSymbols.TryGetValue(brokerageTicker, out var symbol))
+            if (_dataProviderSymbolCache.TryGetValue(dataProviderTicker, out var symbol))
             {
                 return symbol;
             }
 
-            throw new NullReferenceException("");
+            return GetLeanSymbol(
+                root,
+                ConvertContractSecurityTypeFromThetaDataFormat(contractSecurityType),
+                Market.CBOE, // docs: https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/1872cab32381d-the-si-ps#options-opra
+                dataProviderDate.ConvertFromThetaDataDateFormat(),
+                strike,
+                ConvertContractOptionRightFromThetaDataFormat(right));
         }
 
         public Symbol GetLeanSymbol(string brokerageSymbol, SecurityType securityType, string market, DateTime expirationDate = default, decimal strike = 0, OptionRight optionRight = OptionRight.Call)
@@ -52,34 +74,42 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             return GetLeanSymbol(brokerageSymbol, securityType, market, OptionStyle.American, expirationDate, strike, optionRight);
         }
 
-        public Symbol GetLeanSymbol(string brokerageSymbol, SecurityType securityType, string market, OptionStyle optionStyle,
+        public Symbol GetLeanSymbol(string dataProviderTicker, SecurityType securityType, string market, OptionStyle optionStyle,
             DateTime expirationDate = new DateTime(), decimal strike = 0, OptionRight optionRight = OptionRight.Call,
             Symbol? underlying = null)
         {
-            if (string.IsNullOrWhiteSpace(brokerageSymbol))
+            if (string.IsNullOrWhiteSpace(dataProviderTicker))
             {
-                throw new ArgumentException("Invalid symbol: " + brokerageSymbol);
+                throw new ArgumentException("Invalid symbol: " + dataProviderTicker);
             }
 
-            var underlyingSymbolStr = underlying?.Value ?? brokerageSymbol;
+            var underlyingSymbolStr = underlying?.Value ?? dataProviderTicker;
             var leanSymbol = default(Symbol);
+
+            if (strike != 0m)
+            {
+                strike = ConvertStrikePriceFromThetaDataFormat(strike);
+            }
+
             switch (securityType)
             {
                 case SecurityType.Option:
                     leanSymbol = Symbol.CreateOption(underlyingSymbolStr, market, optionStyle, optionRight, strike, expirationDate);
+                    dataProviderTicker = GetDataProviderOptionTickerByLeanSymbol(leanSymbol);
                     break;
 
                 case SecurityType.IndexOption:
                     underlying ??= Symbol.Create(underlyingSymbolStr, SecurityType.Index, market);
-                    leanSymbol = Symbol.CreateOption(underlying, brokerageSymbol, market, optionStyle, optionRight, strike, expirationDate);
+                    leanSymbol = Symbol.CreateOption(underlying, dataProviderTicker, market, optionStyle, optionRight, strike, expirationDate);
+                    dataProviderTicker = GetDataProviderOptionTickerByLeanSymbol(leanSymbol);
                     break;
 
                 case SecurityType.Equity:
-                    leanSymbol = Symbol.Create(brokerageSymbol, securityType, market);
+                    leanSymbol = Symbol.Create(dataProviderTicker, securityType, market);
                     break;
 
                 case SecurityType.Index:
-                    leanSymbol = Symbol.Create(brokerageSymbol, securityType, market);
+                    leanSymbol = Symbol.Create(dataProviderTicker, securityType, market);
                     break;
 
                 default:
@@ -89,18 +119,36 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             return leanSymbol;
         }
 
-        private string GetBrokerageTicker(string ticker, DateTime expirationDate, decimal strikePrice, OptionRight optionRight)
+        private string GetDataProviderOptionTickerByLeanSymbol(Symbol symbol)
         {
-            return GetBrokerageTicker(
-                ticker,
-                expirationDate.ToStringInvariant("yyyyMMdd"),
-                Math.Truncate(strikePrice * 1000m),
-                optionRight == OptionRight.Call ? "C" : "P");
+            return GetDataProviderOptionTicker(
+                            symbol.ID.Symbol,
+                            symbol.ID.Date.ConvertToThetaDataDateFormat(),
+                            ConvertStrikePriceToThetaDataFormat(symbol.ID.StrikePrice),
+                            symbol.ID.OptionRight == OptionRight.Call ? "C" : "P");
         }
 
-        private string GetBrokerageTicker(string ticker, string expirationDate, decimal strikePrice, string optionRight)
+        private string GetDataProviderOptionTicker(string ticker, string expirationDate, decimal strikePrice, string optionRight)
         {
-            return $"{ticker},{expirationDate},{strikePrice.ToStringInvariant()},{optionRight}";
+            return GetDataProviderOptionTicker(ticker, expirationDate, strikePrice.ToStringInvariant(), optionRight);
         }
+
+        private string GetDataProviderOptionTicker(string ticker, string expirationDate, string strikePrice, string optionRight)
+        {
+            return $"{ticker},{expirationDate},{strikePrice},{optionRight}";
+        }
+
+        private SecurityType ConvertContractSecurityTypeFromThetaDataFormat(ContractSecurityType contractSecurityType) => contractSecurityType switch
+        {
+            ContractSecurityType.Option => SecurityType.Option,
+            _ => throw new NotSupportedException($"The Contract Security Type '{contractSecurityType}' is not supported.")
+        };
+
+        private OptionRight ConvertContractOptionRightFromThetaDataFormat(string contractOptionRight) 
+            => contractOptionRight == "C" ? OptionRight.Call : OptionRight.Put;
+
+        private string ConvertStrikePriceToThetaDataFormat(decimal value) => Math.Truncate(value * 1000m).ToStringInvariant();
+
+        private decimal ConvertStrikePriceFromThetaDataFormat(decimal value) => value / 1000m;
     }
 }

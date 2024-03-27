@@ -91,12 +91,10 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
                 foreach (var strike in _restClient.ExecuteRequest<ThetaDataRestResponse.RestResponse<int>>(strikeRequest).Response)
                 {
-                    var strikePrice = Convert.ToDecimal(strike) / 1000m;
-
                     foreach (var right in optionRights)
                     {
                         yield return _symbolMapper.GetLeanSymbol(underlying.Value, optionsSecurityType, underlying.ID.Market, OptionStyle.American,
-                            expiryDate, strikePrice, right, underlying);
+                            expiryDate, strike, right, underlying);
                     }
                 }
             }

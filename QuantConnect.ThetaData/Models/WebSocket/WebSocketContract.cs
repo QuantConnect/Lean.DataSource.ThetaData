@@ -35,11 +35,10 @@ public readonly struct WebSocketContract
     public decimal Strike { get; }
 
     [JsonProperty("right")]
-    [JsonConverter(typeof(StringEnumConverter))]
-    public ContractRight Right { get; }
+    public string Right { get; }
 
     [JsonConstructor]
-    public WebSocketContract(ContractSecurityType securityType, string root, string expiration, decimal strike, ContractRight right)
+    public WebSocketContract(ContractSecurityType securityType, string root, string expiration, decimal strike, string right)
     {
         SecurityType = securityType;
         Root = root;
