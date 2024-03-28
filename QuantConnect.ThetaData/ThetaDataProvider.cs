@@ -30,7 +30,7 @@ using QuantConnect.Lean.DataSource.ThetaData.Models.WebSocket;
 namespace QuantConnect.Lean.DataSource.ThetaData
 {
     /// <summary>
-    /// 
+    /// ThetaData.net implementation of <see cref="IDataQueueHandler"/>
     /// </summary>
     public partial class ThetaDataProvider : IDataQueueHandler
     {
@@ -65,6 +65,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         private readonly ThetaDataWebSocketClientWrapper _webSocketClient;
 
         /// <summary>
+        /// Represents a client for interacting with the Theta Data REST API by sending HTTP requests.
+        /// </summary>
+        private readonly ThetaDataRestApiClient _restApiClient;
+
+        /// <summary>
         /// Ensures thread-safe synchronization when updating aggregation tick data, such as quotes or trades.
         /// </summary>
         private object _lock = new object();
@@ -89,10 +94,10 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                     Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(Config.Get("data-aggregator", "QuantConnect.Lean.Engine.DataFeeds.AggregationManager"), forceTypeNameOnExisting: false);
             }
 
-            var restApiClient = new ThetaDataRestApiClient();
+            _restApiClient = new ThetaDataRestApiClient();
             _symbolMapper = new ThetaDataSymbolMapper();
 
-            _optionChainProvider = new CachingOptionChainProvider(new ThetaDataOptionChainProvider(_symbolMapper, restApiClient));
+            _optionChainProvider = new CachingOptionChainProvider(new ThetaDataOptionChainProvider(_symbolMapper, _restApiClient));
 
             _webSocketClient = new ThetaDataWebSocketClientWrapper(_symbolMapper, OnMessage);
             _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
