@@ -37,26 +37,32 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
         public T? ExecuteRequest<T>(RestRequest request)
         {
-            var response = _restClient.Execute(request);
-
-            if (response == null)
-            {
-                throw new Exception($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: No response for {request.Resource}");
-            }
-
-            if ((int)response.StatusCode == 472)
-            {
-                Log.Trace($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}:NO_DATA There was no data found for the specified request.");
-                return default;
-            }
-
             try
             {
+                var response = _restClient.Execute(request);
+
+                if (response == null || response.StatusCode == 0)
+                {
+                    throw new Exception($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: No response received for request to {request.Resource}. Error message: {response?.ErrorMessage ?? "No error message available."}");
+                }
+
+                // docs: https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/3ucp87xxgy8d3-error-codes
+                if ((int)response.StatusCode == 472)
+                {
+                    Log.Trace($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}:NO_DATA There was no data found for the specified request.");
+                    return default;
+                }
+
+
                 return JsonConvert.DeserializeObject<T>(response.Content);
             }
             catch (Exception ex)
             {
                 throw new Exception(ex.Message);
+            }
+            finally
+            {
+                Log.Debug($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: URI: {_restClient.BuildUri(request)}");
             }
         }
     }
