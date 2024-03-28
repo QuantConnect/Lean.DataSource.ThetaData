@@ -16,7 +16,7 @@
 using RestSharp;
 using QuantConnect.Logging;
 using QuantConnect.Interfaces;
-using QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
+using QuantConnect.Lean.DataSource.ThetaData.Models.Common;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
 {
