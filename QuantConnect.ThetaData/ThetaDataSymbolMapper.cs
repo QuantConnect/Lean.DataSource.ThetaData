@@ -23,9 +23,31 @@ namespace QuantConnect.Lean.DataSource.ThetaData
     /// </summary>
     public class ThetaDataSymbolMapper : ISymbolMapper
     {
+        /// <summary> 
+        /// docs: https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/1872cab32381d-the-si-ps#options-opra
+        /// </summary>
+        private const string MARKET = Market.CBOE;
+
+        /// <summary>
+        /// Cache mapping data provider ticker strings to symbols.
+        /// </summary>
         private Dictionary<string, Symbol> _dataProviderSymbolCache = new();
+
+        /// <summary>
+        /// Cache mapping symbols to their corresponding data provider ticker strings.
+        /// </summary>
         private Dictionary<Symbol, string> _leanSymbolCache = new();
 
+        /// <summary>
+        /// Converts a Lean symbol instance to a brokerage symbol.
+        /// </summary>
+        /// <param name="symbol">The Lean symbol instance to be converted.</param>
+        /// <returns>
+        /// For Equity or Index symbols, returns the actual symbol's ticker.
+        /// For Option or IndexOption symbols, returns a formatted string: "Ticker,yyyyMMdd,strikePrice,optionRight".
+        /// Example: For symbol AAPL expiry DateTime(2024, 03, 28), strikePrice = 100m, OptionRight.Call => "AAPL,20240328,100000,C".
+        /// </returns>
+        /// <exception cref="NotImplementedException">Thrown when the specified securityType is not supported.</exception>
         public string GetBrokerageSymbol(Symbol symbol)
         {
             if (!_leanSymbolCache.TryGetValue(symbol, out var dataProviderTicker))
@@ -34,14 +56,19 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 {
                     case SecurityType.Equity:
                     case SecurityType.Index:
-                        dataProviderTicker = symbol.Value;
+                        dataProviderTicker = GetDataProviderTicker(ContractSecurityType.Equity, symbol.Value);
                         break;
                     case SecurityType.Option:
                     case SecurityType.IndexOption:
-                        dataProviderTicker = GetDataProviderOptionTickerByLeanSymbol(symbol);
+                        dataProviderTicker = GetDataProviderTicker(
+                            ContractSecurityType.Option,
+                            symbol.ID.Symbol,
+                            symbol.ID.Date.ConvertToThetaDataDateFormat(),
+                            ConvertStrikePriceToThetaDataFormat(symbol.ID.StrikePrice),
+                            symbol.ID.OptionRight == OptionRight.Call ? "C" : "P");
                         break;
                     default:
-                        throw new NotImplementedException();
+                        throw new NotSupportedException($"{nameof(ThetaDataSymbolMapper)}.{nameof(GetBrokerageSymbol)}: The security type '{symbol.SecurityType}' is not supported by {nameof(ThetaDataProvider)}.");
                 }
 
                 _dataProviderSymbolCache[dataProviderTicker] = symbol;
@@ -51,29 +78,66 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             return dataProviderTicker;
         }
 
-        public Symbol GetOptionLeanSymbol(string root, ContractSecurityType contractSecurityType, string dataProviderDate, decimal strike, string right)
+        /// <summary>
+        /// Constructs a Lean symbol based on the provided parameters.
+        /// </summary>
+        /// <param name="root">The root symbol for the Lean symbol.</param>
+        /// <param name="contractSecurityType">The type of contract security (e.g., Option, Equity).</param>
+        /// <param name="dataProviderDate">The date string formatted according to the data provider's requirements.</param>
+        /// <param name="strike">The strike price for options contracts.</param>
+        /// <param name="right">The option right for options contracts (Call or Put).</param>
+        /// <returns>
+        /// A Lean symbol constructed using the provided parameters.
+        /// </returns>
+        public Symbol GetLeanSymbol(string root, ContractSecurityType contractSecurityType, string dataProviderDate, decimal strike, string right)
         {
-            var dataProviderTicker = GetDataProviderOptionTicker(root, dataProviderDate, strike, right);
-
-            if (_dataProviderSymbolCache.TryGetValue(dataProviderTicker, out var symbol))
+            if (!_dataProviderSymbolCache.TryGetValue(
+                GetDataProviderTicker(contractSecurityType, root, dataProviderDate, strike.ToStringInvariant(), right), out var symbol))
             {
-                return symbol;
+                switch (contractSecurityType)
+                {
+                    case ContractSecurityType.Option:
+                        return GetLeanSymbol(root, SecurityType.Option, MARKET, dataProviderDate.ConvertFromThetaDataDateFormat(), strike, ConvertContractOptionRightFromThetaDataFormat(right));
+                    case ContractSecurityType.Equity:
+                        return GetLeanSymbol(root, SecurityType.Equity, MARKET);
+                    default:
+                        throw new NotImplementedException("");
+                }
             }
-
-            return GetLeanSymbol(
-                root,
-                ConvertContractSecurityTypeFromThetaDataFormat(contractSecurityType),
-                Market.CBOE, // docs: https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/1872cab32381d-the-si-ps#options-opra
-                dataProviderDate.ConvertFromThetaDataDateFormat(),
-                strike,
-                ConvertContractOptionRightFromThetaDataFormat(right));
+            return symbol;
         }
 
+        /// <summary>
+        /// Constructs a Lean symbol based on the provided parameters.
+        /// </summary>
+        /// <param name="brokerageSymbol">The brokerage symbol representing the security.</param>
+        /// <param name="securityType">The type of security (e.g., Equity, Option).</param>
+        /// <param name="market">The market/exchange where the security is traded.</param>
+        /// <param name="expirationDate">The expiration date for options contracts. Default is DateTime.MinValue.</param>
+        /// <param name="strike">The strike price for options contracts. Default is 0.</param>
+        /// <param name="optionRight">The option right for options contracts (Call or Put). Default is Call.</param>
+        /// <returns>
+        /// A Lean symbol constructed using the provided parameters.
+        /// </returns>
         public Symbol GetLeanSymbol(string brokerageSymbol, SecurityType securityType, string market, DateTime expirationDate = default, decimal strike = 0, OptionRight optionRight = OptionRight.Call)
         {
             return GetLeanSymbol(brokerageSymbol, securityType, market, OptionStyle.American, expirationDate, strike, optionRight);
         }
 
+        /// <summary>
+        /// Constructs a Lean symbol based on the provided parameters.
+        /// </summary>
+        /// <param name="dataProviderTicker">The ticker symbol formatted according to the data provider's requirements.</param>
+        /// <param name="securityType">The type of security (e.g., Equity, Option).</param>
+        /// <param name="market">The market/exchange where the security is traded.</param>
+        /// <param name="optionStyle">The option style for options contracts (e.g., American, European).</param>
+        /// <param name="expirationDate">The expiration date for options contracts. Default is DateTime.MinValue.</param>
+        /// <param name="strike">The strike price for options contracts. Default is 0.</param>
+        /// <param name="optionRight">The option right for options contracts (Call or Put). Default is Call.</param>
+        /// <param name="underlying">The underlying symbol for options contracts. Default is null.</param>
+        /// <returns>
+        /// A Lean symbol constructed using the provided parameters.
+        /// </returns>
         public Symbol GetLeanSymbol(string dataProviderTicker, SecurityType securityType, string market, OptionStyle optionStyle,
             DateTime expirationDate = new DateTime(), decimal strike = 0, OptionRight optionRight = OptionRight.Call,
             Symbol? underlying = null)
@@ -95,13 +159,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             {
                 case SecurityType.Option:
                     leanSymbol = Symbol.CreateOption(underlyingSymbolStr, market, optionStyle, optionRight, strike, expirationDate);
-                    dataProviderTicker = GetDataProviderOptionTickerByLeanSymbol(leanSymbol);
                     break;
 
                 case SecurityType.IndexOption:
                     underlying ??= Symbol.Create(underlyingSymbolStr, SecurityType.Index, market);
                     leanSymbol = Symbol.CreateOption(underlying, dataProviderTicker, market, optionStyle, optionRight, strike, expirationDate);
-                    dataProviderTicker = GetDataProviderOptionTickerByLeanSymbol(leanSymbol);
                     break;
 
                 case SecurityType.Equity:
@@ -113,42 +175,77 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                     break;
 
                 default:
-                    throw new Exception($"PolygonSymbolMapper.GetLeanSymbol(): unsupported security type: {securityType}");
+                    throw new Exception($"{nameof(ThetaDataSymbolMapper)}.{nameof(GetLeanSymbol)}: unsupported security type: {securityType}");
             }
 
             return leanSymbol;
         }
 
-        private string GetDataProviderOptionTickerByLeanSymbol(Symbol symbol)
+        /// <summary>
+        /// Gets the ticker for the data provider based on the contract security type.
+        /// </summary>
+        /// <param name="contractSecurityType">The type of contract security (e.g., Option, Equity).</param>
+        /// <param name="ticker">The ticker symbol.</param>
+        /// <param name="expirationDate">The expiration date for options contracts. Default is null.</param>
+        /// <param name="strikePrice">The strike price for options contracts. Default is null.</param>
+        /// <param name="optionRight">The option right for options contracts. Default is null.</param>
+        /// <returns>
+        /// The ticker string formatted according to the data provider's requirements.
+        /// For options contracts, the format is "Ticker,ExpirationDate,StrikePrice,OptionRight".
+        /// For equity contracts, the ticker is returned directly.
+        /// </returns>
+        /// <exception cref="NotSupportedException">
+        /// Thrown when the provided contractSecurityType is not supported.
+        /// </exception>
+        private string GetDataProviderTicker(ContractSecurityType contractSecurityType, string ticker, string? expirationDate = null, string? strikePrice = null, string? optionRight = null)
         {
-            return GetDataProviderOptionTicker(
-                            symbol.ID.Symbol,
-                            symbol.ID.Date.ConvertToThetaDataDateFormat(),
-                            ConvertStrikePriceToThetaDataFormat(symbol.ID.StrikePrice),
-                            symbol.ID.OptionRight == OptionRight.Call ? "C" : "P");
+            switch (contractSecurityType)
+            {
+                case ContractSecurityType.Option:
+                    return $"{ticker},{expirationDate},{strikePrice},{optionRight}";
+                case ContractSecurityType.Equity:
+                    return ticker;
+                default:
+                    throw new NotSupportedException();
+            }
+
         }
 
-        private string GetDataProviderOptionTicker(string ticker, string expirationDate, decimal strikePrice, string optionRight)
+        /// <summary>
+        /// Converts an option right from ThetaData format to the corresponding Lean format.
+        /// </summary>
+        /// <param name="contractOptionRight">The option right in ThetaData format ("C" for Call, "P" for Put).</param>
+        /// <returns>
+        /// The corresponding Lean OptionRight enum value.
+        /// </returns>
+        /// <exception cref="ArgumentException">
+        /// Thrown when the provided contractOptionRight is not a recognized ThetaData option right ("C" for Call or "P" for Put).
+        /// </exception>
+        private OptionRight ConvertContractOptionRightFromThetaDataFormat(string contractOptionRight) => contractOptionRight switch
         {
-            return GetDataProviderOptionTicker(ticker, expirationDate, strikePrice.ToStringInvariant(), optionRight);
-        }
-
-        private string GetDataProviderOptionTicker(string ticker, string expirationDate, string strikePrice, string optionRight)
-        {
-            return $"{ticker},{expirationDate},{strikePrice},{optionRight}";
-        }
-
-        private SecurityType ConvertContractSecurityTypeFromThetaDataFormat(ContractSecurityType contractSecurityType) => contractSecurityType switch
-        {
-            ContractSecurityType.Option => SecurityType.Option,
-            _ => throw new NotSupportedException($"The Contract Security Type '{contractSecurityType}' is not supported.")
+            "C" => OptionRight.Call,
+            "P" => OptionRight.Put,
+            _ => throw new ArgumentException($"{nameof(ThetaDataSymbolMapper)}.{nameof(ConvertContractOptionRightFromThetaDataFormat)}:The provided contractOptionRight is not a recognized ThetaData option right. Expected values are 'C' for Call or 'P' for Put.")
         };
 
-        private OptionRight ConvertContractOptionRightFromThetaDataFormat(string contractOptionRight) 
-            => contractOptionRight == "C" ? OptionRight.Call : OptionRight.Put;
-
+        /// <summary>
+        /// Converts an option strike price to ThetaData format, where strike prices are formatted in 10ths of a cent.
+        /// </summary>
+        /// <param name="value">The option strike price.</param>
+        /// <returns>
+        /// The strike price in ThetaData format.
+        /// For example, if the input strike price is 100.00m, the returned value would be "100_000".
+        /// </returns>
         private string ConvertStrikePriceToThetaDataFormat(decimal value) => Math.Truncate(value * 1000m).ToStringInvariant();
 
+        /// <summary>
+        /// Converts an option strike price from ThetaData format to Lean format, where strike prices are formatted in 10ths of a cent.
+        /// </summary>
+        /// <param name="value">The option strike price in ThetaData format.</param>
+        /// <returns>
+        /// The strike price in Lean format.
+        /// For example, if the input strike price is "100000", the returned value would be 100m.
+        /// </returns>
         private decimal ConvertStrikePriceFromThetaDataFormat(decimal value) => value / 1000m;
     }
 }

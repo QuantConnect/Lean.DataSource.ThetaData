@@ -143,7 +143,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             var leanSymbol = default(Symbol);
             if (json != null && json.Header.Type != WebSocketHeaderType.Status && json.Contract.HasValue)
             {
-                leanSymbol = _symbolMapper.GetOptionLeanSymbol(
+                leanSymbol = _symbolMapper.GetLeanSymbol(
                     json.Contract.Value.Root,
                     json.Contract.Value.SecurityType,
                     json.Contract.Value.Expiration,

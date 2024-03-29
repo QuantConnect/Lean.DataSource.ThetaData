@@ -23,21 +23,15 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
     [TestFixture]
     public class ThetaDataSymbolMapperTests
     {
-        private ISymbolMapper _symbolMapper;
-
-        [SetUp]
-        public void Setup()
-        {
-            _symbolMapper = new ThetaDataSymbolMapper();
-        }
+        private ISymbolMapper _symbolMapper = new ThetaDataSymbolMapper();
 
         [TestCase("JD", SecurityType.Equity, null, null, null, "JD", null, null, null)]
         [TestCase("SPEUFP2I", SecurityType.Index, null, null, null, "SPEUFP2I", null, null, null)]
-        [TestCase("AAPL", SecurityType.Option, OptionRight.Call, 22, "2024/03/08", "AAPL", "C" , "22000", "20240308")]
-        [TestCase("9QE", SecurityType.Option, OptionRight.Put, 100, "2026/02/02", "9QE", "P" , "100000", "20260202")]
-        [TestCase("9QE", SecurityType.Option, OptionRight.Put, 123, "2026/02/02", "9QE", "P" , "123000", "20260202")]
-        [TestCase("SPXW", SecurityType.IndexOption, OptionRight.Call, 6700, "2022/09/30", "SPXW", "C" , "6700000", "20220930")]
-        [TestCase("NDX", SecurityType.IndexOption, OptionRight.Call, 1650, "2013/01/19", "NDX", "C" , "1650000", "20130119")]
+        [TestCase("AAPL", SecurityType.Option, OptionRight.Call, 22, "2024/03/08", "AAPL", "C", "22000", "20240308")]
+        [TestCase("9QE", SecurityType.Option, OptionRight.Put, 100, "2026/02/02", "9QE", "P", "100000", "20260202")]
+        [TestCase("9QE", SecurityType.Option, OptionRight.Put, 123, "2026/02/02", "9QE", "P", "123000", "20260202")]
+        [TestCase("SPXW", SecurityType.IndexOption, OptionRight.Call, 6700, "2022/09/30", "SPXW", "C", "6700000", "20220930")]
+        [TestCase("NDX", SecurityType.IndexOption, OptionRight.Call, 1650, "2013/01/19", "NDX", "C", "1650000", "20130119")]
         public void GetDataProviderOptionTicker(string ticker, SecurityType securityType, OptionRight? optionRight, decimal? strikePrice, DateTime? expirationDate,
             string expectedTicker, string expectedOptionRight, string expectedStrike, string expectedExpirationDate)
         {
@@ -55,26 +49,44 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
             }
         }
 
-        [TestCase("AAPL", ContractSecurityType.Option, "C", 22000, "20240308")]
+        [TestCase("AAPL", ContractSecurityType.Option, "C", 22000, "20240308", Market.CBOE, OptionRight.Call, 22, "2024/03/08")]
+        [TestCase("AAPL", ContractSecurityType.Option, "P", 1000000, "20240303", Market.CBOE, OptionRight.Put, 1000, "2024/03/03")]
+        [TestCase("AAPL", ContractSecurityType.Equity, "", 0, "", Market.CBOE, null, null, null)]
+        [TestCase("INTL", ContractSecurityType.Equity, "", 0, "", Market.CBOE, null, null, null)]
         public void GetLeanSymbol(
             string dataProviderTicker,
             ContractSecurityType dataProviderContractSecurityType,
             string dataProviderOptionRight,
             decimal dataProviderStrike,
-            string dataProviderExpirationDate)
+            string dataProviderExpirationDate,
+            string expectedMarket,
+            OptionRight? expectedOptionRight = null,
+            decimal? expectedStrikePrice = null,
+            DateTime? expectedExpiryDateTime = null)
         {
-            var market = Market.CBOE;
-
             var leanSymbol = (_symbolMapper as ThetaDataSymbolMapper)
-                .GetOptionLeanSymbol(dataProviderTicker, dataProviderContractSecurityType, dataProviderExpirationDate, dataProviderStrike, dataProviderOptionRight);
+                .GetLeanSymbol(dataProviderTicker, dataProviderContractSecurityType, dataProviderExpirationDate, dataProviderStrike, dataProviderOptionRight);
 
-            var expectedLeanSymbol = 
-                CreateSymbol(dataProviderTicker, SecurityType.Option, OptionRight.Call, 22m, dataProviderExpirationDate.ConvertFromThetaDataDateFormat(), market);
+            var expectedLeanSymbol =
+                CreateSymbol(dataProviderContractSecurityType, dataProviderTicker, expectedOptionRight, expectedStrikePrice, expectedExpiryDateTime, expectedMarket);
 
             Assert.That(leanSymbol, Is.EqualTo(expectedLeanSymbol));
         }
 
-        private Symbol CreateSymbol(string ticker, SecurityType securityType, OptionRight? optionRight, decimal? strikePrice, DateTime? expirationDate, string market = Market.USA)
+        private Symbol CreateSymbol(ContractSecurityType contractSecurityType, string ticker, OptionRight? optionRight, decimal? strikePrice, DateTime? expirationDate, string market = Market.USA)
+        {
+            switch (contractSecurityType)
+            {
+                case ContractSecurityType.Option:
+                    return CreateSymbol(ticker, SecurityType.Option, optionRight, strikePrice, expirationDate, market);
+                case ContractSecurityType.Equity:
+                    return CreateSymbol(ticker, SecurityType.Equity, market: market);
+                default:
+                    throw new NotSupportedException($"The contract security type '{contractSecurityType}' is not supported.");
+            }
+        }
+
+        private Symbol CreateSymbol(string ticker, SecurityType securityType, OptionRight? optionRight = null, decimal? strikePrice = null, DateTime? expirationDate = null, string market = Market.CBOE)
         {
             switch (securityType)
             {
