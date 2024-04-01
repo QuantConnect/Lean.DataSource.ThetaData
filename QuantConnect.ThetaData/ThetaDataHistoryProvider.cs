@@ -99,7 +99,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 return null;
             }
 
-            if (historyRequest.TickType != TickType.OpenInterest && historyRequest.Resolution != Resolution.Daily && historyRequest.Symbol.SecurityType != SecurityType.Option)
+            if (historyRequest.Symbol.SecurityType == SecurityType.Option && historyRequest.TickType == TickType.OpenInterest && historyRequest.Resolution != Resolution.Daily)
             {
                 if (!_invalidOpenInterestWarningFired)
                 {
