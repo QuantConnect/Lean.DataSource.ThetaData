@@ -26,7 +26,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <summary> 
         /// docs: https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/1872cab32381d-the-si-ps#options-opra
         /// </summary>
-        private const string MARKET = Market.CBOE;
+        private const string MARKET = Market.USA;
 
         /// <summary>
         /// Cache mapping data provider ticker strings to symbols.

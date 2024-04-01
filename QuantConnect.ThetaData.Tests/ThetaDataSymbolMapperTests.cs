@@ -35,7 +35,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
         public void GetDataProviderOptionTicker(string ticker, SecurityType securityType, OptionRight? optionRight, decimal? strikePrice, DateTime? expirationDate,
             string expectedTicker, string expectedOptionRight, string expectedStrike, string expectedExpirationDate)
         {
-            var leanSymbol = CreateSymbol(ticker, securityType, optionRight, strikePrice, expirationDate);
+            var leanSymbol = TestHelpers.CreateSymbol(ticker, securityType, optionRight, strikePrice, expirationDate);
 
             var dataProviderContract = _symbolMapper.GetBrokerageSymbol(leanSymbol).Split(',');
 
@@ -49,10 +49,10 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
             }
         }
 
-        [TestCase("AAPL", ContractSecurityType.Option, "C", 22000, "20240308", Market.CBOE, OptionRight.Call, 22, "2024/03/08")]
-        [TestCase("AAPL", ContractSecurityType.Option, "P", 1000000, "20240303", Market.CBOE, OptionRight.Put, 1000, "2024/03/03")]
-        [TestCase("AAPL", ContractSecurityType.Equity, "", 0, "", Market.CBOE, null, null, null)]
-        [TestCase("INTL", ContractSecurityType.Equity, "", 0, "", Market.CBOE, null, null, null)]
+        [TestCase("AAPL", ContractSecurityType.Option, "C", 22000, "20240308", Market.USA, OptionRight.Call, 22, "2024/03/08")]
+        [TestCase("AAPL", ContractSecurityType.Option, "P", 1000000, "20240303", Market.USA, OptionRight.Put, 1000, "2024/03/03")]
+        [TestCase("AAPL", ContractSecurityType.Equity, "", 0, "", Market.USA, null, null, null)]
+        [TestCase("INTL", ContractSecurityType.Equity, "", 0, "", Market.USA, null, null, null)]
         public void GetLeanSymbol(
             string dataProviderTicker,
             ContractSecurityType dataProviderContractSecurityType,
@@ -78,29 +78,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
             switch (contractSecurityType)
             {
                 case ContractSecurityType.Option:
-                    return CreateSymbol(ticker, SecurityType.Option, optionRight, strikePrice, expirationDate, market);
+                    return TestHelpers.CreateSymbol(ticker, SecurityType.Option, optionRight, strikePrice, expirationDate, market);
                 case ContractSecurityType.Equity:
-                    return CreateSymbol(ticker, SecurityType.Equity, market: market);
+                    return TestHelpers.CreateSymbol(ticker, SecurityType.Equity, market: market);
                 default:
                     throw new NotSupportedException($"The contract security type '{contractSecurityType}' is not supported.");
-            }
-        }
-
-        private Symbol CreateSymbol(string ticker, SecurityType securityType, OptionRight? optionRight = null, decimal? strikePrice = null, DateTime? expirationDate = null, string market = Market.CBOE)
-        {
-            switch (securityType)
-            {
-                case SecurityType.Equity:
-                case SecurityType.Index:
-                    return Symbol.Create(ticker, securityType, market);
-                case SecurityType.Option:
-                    var underlyingEquitySymbol = Symbol.Create(ticker, SecurityType.Equity, market);
-                    return Symbol.CreateOption(underlyingEquitySymbol, market, OptionStyle.American, optionRight.Value, strikePrice.Value, expirationDate.Value);
-                case SecurityType.IndexOption:
-                    var underlyingIndexSymbol = Symbol.Create(ticker, SecurityType.Index, market);
-                    return Symbol.CreateOption(underlyingIndexSymbol, market, OptionStyle.American, optionRight.Value, strikePrice.Value, expirationDate.Value);
-                default:
-                    throw new NotSupportedException($"The security type '{securityType}' is not supported.");
             }
         }
     }
