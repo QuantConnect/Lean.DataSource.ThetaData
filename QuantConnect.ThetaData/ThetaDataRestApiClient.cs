@@ -41,7 +41,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             {
                 var response = _restClient.Execute(request);
 
-                if (response == null || response.StatusCode == 0)
+                if (response == null || response.StatusCode == 0 || response.StatusCode != System.Net.HttpStatusCode.OK)
                 {
                     throw new Exception($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: No response received for request to {request.Resource}. Error message: {response?.ErrorMessage ?? "No error message available."}");
                 }
