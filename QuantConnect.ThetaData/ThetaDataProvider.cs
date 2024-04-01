@@ -226,7 +226,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             return
                 symbol.Value.IndexOfInvariant("universe", true) == -1 &&
                 !symbol.IsCanonical() &&
-                symbol.SecurityType == SecurityType.Option;
+                symbol.SecurityType == SecurityType.Option || symbol.SecurityType == SecurityType.IndexOption;
         }
     }
 }
