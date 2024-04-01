@@ -79,7 +79,7 @@ public readonly struct EndOfDayReportResponse
     /// The last NBBO bid exchange.
     /// </summary>
     //[JsonProperty("bid_exchange")]
-    public short BidExchange { get; }
+    public byte BidExchange { get; }
 
     /// <summary>
     /// The last NBBO bid price.
@@ -91,7 +91,7 @@ public readonly struct EndOfDayReportResponse
     /// The last NBBO bid condition.
     /// </summary>
     //[JsonProperty("bid_condition")]
-    public short BidCondition { get; }
+    public byte BidCondition { get; }
 
     /// <summary>
     /// The last NBBO ask size.
@@ -103,7 +103,7 @@ public readonly struct EndOfDayReportResponse
     /// The last NBBO ask exchange.
     /// </summary>
     //[JsonProperty("ask_exchange")]
-    public short AskExchange { get; }
+    public byte AskExchange { get; }
 
     /// <summary>
     /// The last NBBO ask price.
@@ -115,7 +115,7 @@ public readonly struct EndOfDayReportResponse
     /// The last NBBO ask condition.
     /// </summary>
     //[JsonProperty("ask_condition")]
-    public short AskCondition { get; }
+    public byte AskCondition { get; }
 
     /// <summary>
     /// The date formated as YYYYMMDD.
@@ -125,8 +125,8 @@ public readonly struct EndOfDayReportResponse
 
     //[JsonConstructor]
     public EndOfDayReportResponse(uint reportGeneratedTimeMilliseconds, uint lastTradeTimeMilliseconds, decimal open, decimal high, decimal low, decimal close,
-        decimal volume, uint amountTrades, decimal bidSize, short bidExchange, decimal bidPrice, short bidCondition, decimal askSize, short askExchange,
-        decimal askPrice, short askCondition, string date)
+        decimal volume, uint amountTrades, decimal bidSize, byte bidExchange, decimal bidPrice, byte bidCondition, decimal askSize, byte askExchange,
+        decimal askPrice, byte askCondition, string date)
     {
         ReportGeneratedTimeMilliseconds = reportGeneratedTimeMilliseconds;
         LastTradeTimeMilliseconds = lastTradeTimeMilliseconds;
