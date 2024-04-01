@@ -23,6 +23,7 @@ using QuantConnect.Logging;
 using System.Threading.Tasks;
 using QuantConnect.Data.Market;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using QuantConnect.Lean.Engine.DataFeeds.Enumerators;
 
 namespace QuantConnect.Lean.DataSource.ThetaData.Tests
@@ -52,12 +53,31 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
             }
         }
 
-        [Test]
-        public void CanSubscribeAndUnsubscribe()
+        [TestCase("AAPL", SecurityType.Equity)]
+        [TestCase("VIX", SecurityType.Index)]
+        public void SubscribeWithWrongInputParameters(string ticker, SecurityType securityType)
         {
-            var unsubscribed = false;
+            var symbol = TestHelpers.CreateSymbol(ticker, securityType);
+            var configs = GetSubscriptionDataConfigs(symbol, Resolution.Minute).ToList();
 
-            var configs = GetSubscriptionDataConfigs("JD", Resolution.Second);
+            var isNotSubscribed = new List<bool>();
+            foreach (var config in configs)
+            {
+                if (_thetaDataProvider.Subscribe(config, (sender, args) => { }) == null)
+                {
+                    isNotSubscribed.Add(false);
+                }
+            }
+
+            Assert.That(configs.Count, Is.EqualTo(isNotSubscribed.Count));
+            Assert.IsFalse(isNotSubscribed.Contains(true), "One of config is subscribed successfully.");
+        }
+
+        [TestCase("AAPL", Resolution.Second, 172.5, "2024/03/28")]
+        [TestCase("NVDA", Resolution.Second, 890, "2024/04/12")]
+        public void CanSubscribeAndUnsubscribeOnSecondResolution(string ticker, Resolution resolution, decimal strikePrice, DateTime expiryDate)
+        {
+            var configs = GetSubscriptionDataConfigs(ticker, resolution, strikePrice, expiryDate);
 
             Assert.That(configs, Is.Not.Empty);
 
@@ -105,11 +125,79 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
             Assert.GreaterOrEqual(dataFromEnumerator[typeof(TradeBar)], 0);
         }
 
-        private static IEnumerable<SubscriptionDataConfig> GetSubscriptionDataConfigs(string ticker, Resolution resolution)
+        [TestCase("AAPL", SecurityType.Equity)]
+        [TestCase("VIX", SecurityType.Index)]
+        public void MultipleSubscriptionOnOptionContractsTickResolution(string ticker, SecurityType securityType)
         {
-            var underlyingSymbol = Symbol.Create(ticker, SecurityType.Equity, Market.USA);
-            var option = Symbol.CreateOption(underlyingSymbol, Market.USA, OptionStyle.American, OptionRight.Call, 22m, new DateTime(2024, 03, 08));
-            foreach (var subscription in GetSubscriptionDataConfigs(option, resolution))
+            var minReturnResponse = 5;
+            var obj = new object();
+            var cancellationTokenSource = new CancellationTokenSource();
+            var resetEvent = new AutoResetEvent(false);
+            var underlyingSymbol = TestHelpers.CreateSymbol(ticker, securityType);
+            var configs = _thetaDataProvider.LookupSymbols(underlyingSymbol, false).SelectMany(x => GetSubscriptionTickDataConfigs(x)).Take(500);
+
+            var incomingSymbolDataByTickType = new ConcurrentDictionary<(Symbol, TickType), int>();
+
+            Action<BaseData> callback = (dataPoint) =>
+            {
+                if (dataPoint == null)
+                {
+                    return;
+                }
+
+                var tick = dataPoint as Tick;
+
+                lock (obj)
+                {
+                    switch (tick.TickType)
+                    {
+                        case TickType.Trade:
+                            incomingSymbolDataByTickType[(tick.Symbol, tick.TickType)] += 1;
+                            break;
+                        case TickType.Quote:
+                            incomingSymbolDataByTickType[(tick.Symbol, tick.TickType)] += 1;
+                            break;
+                    };
+                }
+            };
+
+            foreach (var config in configs)
+            {
+                incomingSymbolDataByTickType.TryAdd((config.Symbol, config.TickType), 0);
+                ProcessFeed(_thetaDataProvider.Subscribe(config, (sender, args) =>
+                {
+                    var dataPoint = ((NewDataAvailableEventArgs)args).DataPoint;
+                    Log.Trace($"{dataPoint}. Time span: {dataPoint.Time} - {dataPoint.EndTime}");
+                }),
+                cancellationTokenSource.Token,
+                300,
+                callback: callback,
+                throwExceptionCallback: () => cancellationTokenSource.Cancel());
+            }
+
+            resetEvent.WaitOne(TimeSpan.FromMinutes(1), cancellationTokenSource.Token);
+
+            Log.Trace("Unsubscribing symbols");
+            foreach (var config in configs)
+            {
+                _thetaDataProvider.Unsubscribe(config);
+            }
+
+            resetEvent.WaitOne(TimeSpan.FromSeconds(20), cancellationTokenSource.Token);
+
+            var symbolVolatilities = incomingSymbolDataByTickType.Where(kv => kv.Value > 0).ToList();
+
+            Log.Debug($"CancellationToken: {_cancellationTokenSource.Token.IsCancellationRequested}");
+
+            Assert.IsNotEmpty(symbolVolatilities);
+            Assert.That(symbolVolatilities.Count, Is.GreaterThan(minReturnResponse));
+        }
+
+        private static IEnumerable<SubscriptionDataConfig> GetSubscriptionDataConfigs(string ticker, Resolution resolution, decimal strikePrice, DateTime expiry,
+            OptionRight optionRight = OptionRight.Call, string market = Market.USA)
+        {
+            var symbol = TestHelpers.CreateSymbol(ticker, SecurityType.Option, optionRight, strikePrice, expiry, market);
+            foreach (var subscription in GetSubscriptionDataConfigs(symbol, resolution))
             {
                 yield return subscription;
             }
@@ -162,8 +250,9 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
                         cancellationToken.WaitHandle.WaitOne(TimeSpan.FromMilliseconds(cancellationTokenDelayMilliseconds));
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Log.Debug($"{nameof(ThetaDataProviderTests)}.{nameof(ProcessFeed)}.Exception: {ex.Message}");
                     throw;
                 }
             }, cancellationToken).ContinueWith(task =>
@@ -172,7 +261,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
                 {
                     throwExceptionCallback();
                 }
-                Log.Error("The throwExceptionCallback is null.");
+                Log.Debug("The throwExceptionCallback is null.");
             }, TaskContinuationOptions.OnlyOnFaulted);
         }
     }
