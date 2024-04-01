@@ -59,7 +59,7 @@ public class ThetaDataQuoteConverter : JsonConverter<QuoteResponse>
     public override QuoteResponse ReadJson(JsonReader reader, Type objectType, QuoteResponse existingValue, bool hasExistingValue, JsonSerializer serializer)
     {
         var token = JToken.Load(reader);
-        if (token.Type != JTokenType.Array || token.Count() != 10) throw new Exception();
+        if (token.Type != JTokenType.Array || token.Count() != 10) throw new Exception($"{nameof(ThetaDataQuoteConverter)}.{nameof(ReadJson)}: Invalid token type or count. Expected a JSON array with exactly four elements.");
 
         return new QuoteResponse(
             timeMilliseconds: token[0]!.Value<uint>(),

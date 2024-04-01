@@ -36,7 +36,7 @@ public class ThetaDataEndOfDayConverter : JsonConverter<EndOfDayReportResponse>
     public override EndOfDayReportResponse ReadJson(JsonReader reader, Type objectType, EndOfDayReportResponse existingValue, bool hasExistingValue, JsonSerializer serializer)
     {
         var token = JToken.Load(reader);
-        if (token.Type != JTokenType.Array || token.Count() != 17) throw new Exception();
+        if (token.Type != JTokenType.Array || token.Count() != 17) throw new Exception($"{nameof(ThetaDataEndOfDayConverter)}.{nameof(ReadJson)}: Invalid token type or count. Expected a JSON array with exactly four elements.");
 
         existingValue = new EndOfDayReportResponse(
             reportGeneratedTimeMilliseconds: token[0]!.Value<uint>(),
@@ -48,13 +48,13 @@ public class ThetaDataEndOfDayConverter : JsonConverter<EndOfDayReportResponse>
             volume: token[6]!.Value<decimal>(),
             amountTrades: token[7]!.Value<uint>(),
             bidSize: token[8]!.Value<decimal>(),
-            bidExchange: token[9]!.Value<short>(),
+            bidExchange: token[9]!.Value<byte>(),
             bidPrice: token[10]!.Value<decimal>(),
-            bidCondition: token[11]!.Value<short>(),
+            bidCondition: token[11]!.Value<byte>(),
             askSize: token[12]!.Value<decimal>(),
-            askExchange: token[13]!.Value<short>(),
+            askExchange: token[13]!.Value<byte>(),
             askPrice: token[14]!.Value<decimal>(),
-            askCondition: token[15]!.Value<short>(),
+            askCondition: token[15]!.Value<byte>(),
             date: token[16]!.Value<string>() ?? string.Empty
             );
 

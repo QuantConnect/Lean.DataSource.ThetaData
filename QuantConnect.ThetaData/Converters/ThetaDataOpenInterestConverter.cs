@@ -45,7 +45,7 @@ public class ThetaDataOpenInterestConverter : JsonConverter<OpenInterestResponse
     public override OpenInterestResponse ReadJson(JsonReader reader, Type objectType, OpenInterestResponse existingValue, bool hasExistingValue, JsonSerializer serializer)
     {
         var token = JToken.Load(reader);
-        if (token.Type != JTokenType.Array || token.Count() != 24) throw new Exception();
+        if (token.Type != JTokenType.Array || token.Count() != 3) throw new Exception($"{nameof(ThetaDataOpenInterestConverter)}.{nameof(ReadJson)}: Invalid token type or count. Expected a JSON array with exactly four elements.");
 
         return new OpenInterestResponse(
             timeMilliseconds: token[0]!.Value<uint>(),
