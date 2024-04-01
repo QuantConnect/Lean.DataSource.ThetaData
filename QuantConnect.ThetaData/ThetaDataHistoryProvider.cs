@@ -135,34 +135,30 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             optionRequest.AddQueryParameter("strike", ticker[2]);
             optionRequest.AddQueryParameter("right", ticker[3]);
 
-            if (resolution == Resolution.Daily)
+            var period = resolution.ToTimeSpan();
+
+            switch (tickType)
             {
-                switch (tickType)
-                {
-                    case TickType.Trade:
-                        optionRequest.Resource = "/hist/option/eod";
-                        return GetOptionEndOfDay(optionRequest, symbol, resolution.ToTimeSpan());
-                    case TickType.OpenInterest:
-                        optionRequest.Resource = "/hist/option/open_interest";
-                        return GetHistoricalOpenInterestData(optionRequest, symbol);
-                    default:
-                        throw new ArgumentException("");
-                }
-            }
-            else
-            {
-                switch (tickType)
-                {
-                    case TickType.Trade:
-                        optionRequest.Resource = "/hist/option/trade";
-                        return GetHistoricalTradeData(optionRequest, symbol);
-                    case TickType.Quote:
-                        optionRequest.AddQueryParameter("ivl", GetIntervalsInMilliseconds(resolution));
-                        optionRequest.Resource = "/hist/option/quote";
-                        return GetHistoricalQuoteData(optionRequest, symbol);
-                    default:
-                        throw new ArgumentException("");
-                }
+                case TickType.Trade when resolution == Resolution.Daily:
+                    optionRequest.Resource = "/hist/option/eod";
+                    return GetOptionEndOfDay(optionRequest, symbol, (dateTime, eof) =>
+                    new TradeBar(dateTime, symbol, eof.Open, eof.High, eof.Low, eof.Close, eof.Volume, period));
+                case TickType.Quote when resolution == Resolution.Daily:
+                    optionRequest.Resource = "/hist/option/eod";
+                    return GetOptionEndOfDay(optionRequest, symbol, (dateTime, eof) =>
+                    new Tick(dateTime, symbol, ThetaDataExtensions.QuoteConditions[eof.AskCondition], string.Empty, eof.BidSize, eof.BidPrice, eof.AskSize, eof.AskPrice));
+                case TickType.OpenInterest when resolution == Resolution.Daily:
+                    optionRequest.Resource = "/hist/option/open_interest";
+                    return GetHistoricalOpenInterestData(optionRequest, symbol);
+                case TickType.Trade:
+                    optionRequest.Resource = "/hist/option/trade";
+                    return GetHistoricalTradeData(optionRequest, symbol);
+                case TickType.Quote:
+                    optionRequest.AddQueryParameter("ivl", GetIntervalsInMilliseconds(resolution));
+                    optionRequest.Resource = "/hist/option/quote";
+                    return GetHistoricalQuoteData(optionRequest, symbol);
+                default:
+                    throw new ArgumentException("");
             }
         }
 
@@ -202,15 +198,14 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             }
         }
 
-        private IEnumerable<BaseData>? GetOptionEndOfDay(RestRequest request, Symbol symbol, TimeSpan period)
+        private IEnumerable<BaseData>? GetOptionEndOfDay(RestRequest request, Symbol symbol, Func<DateTime, EndOfDayReportResponse, BaseData> res)
         {
             foreach (var endOfDay in _restApiClient.ExecuteRequest<BaseResponse<EndOfDayReportResponse>>(request).Response)
             {
                 var tradeDateTime = GetTickTime(symbol, endOfDay.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(endOfDay.LastTradeTimeMilliseconds));
 
                 // Interlocked.Increment(ref _dataPointCount);
-
-                yield return new TradeBar(tradeDateTime, symbol, endOfDay.Open, endOfDay.High, endOfDay.Low, endOfDay.Close, endOfDay.Volume, period);
+                yield return res(tradeDateTime, endOfDay);
             }
         }
 
