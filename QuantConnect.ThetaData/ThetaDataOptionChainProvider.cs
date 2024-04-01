@@ -89,7 +89,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
                 strikeRequest.AddOrUpdateParameter("exp", expiryDateStr);
 
-                foreach (var strike in _restClient.ExecuteRequest<BaseResponse<decimal>>(strikeRequest).Response)
+                foreach (var strike in _restClient.ExecuteRequest<BaseResponse<decimal>>(strikeRequest).SelectMany(strikes => strikes.Response))
                 {
                     foreach (var right in optionRights)
                     {
@@ -110,7 +110,10 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             var request = new RestRequest("/list/expirations", Method.GET);
             request.AddQueryParameter("root", ticker);
 
-            return _restClient.ExecuteRequest<BaseResponse<string>>(request).Response;
+            foreach (var expirationDate in _restClient.ExecuteRequest<BaseResponse<string>>(request).SelectMany(x => x.Response))
+            {
+                yield return expirationDate;
+            }
         }
     }
 }

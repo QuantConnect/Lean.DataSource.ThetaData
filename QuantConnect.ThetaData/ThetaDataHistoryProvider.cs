@@ -170,42 +170,53 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <returns></returns>
         private IEnumerable<BaseData> GetHistoricalOpenInterestData(RestRequest request, Symbol symbol)
         {
-            foreach (var openInterest in _restApiClient.ExecuteRequest<BaseResponse<OpenInterestResponse>>(request).Response)
+            foreach (var openInterests in _restApiClient.ExecuteRequest<BaseResponse<OpenInterestResponse>>(request))
             {
-                // ThetaData API: Eastern Time (ET) time zone.
-                var openInterestDateTime = openInterest.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(openInterest.TimeMilliseconds);
-                yield return new OpenInterest(openInterestDateTime, symbol, openInterest.OpenInterest);
+                foreach (var openInterest in openInterests.Response)
+                {
+                    // ThetaData API: Eastern Time (ET) time zone.
+                    var openInterestDateTime = openInterest.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(openInterest.TimeMilliseconds);
+                    yield return new OpenInterest(openInterestDateTime, symbol, openInterest.OpenInterest);
+                }
             }
         }
 
         private IEnumerable<BaseData> GetHistoricalTradeData(RestRequest request, Symbol symbol)
         {
-            foreach (var trade in _restApiClient.ExecuteRequest<BaseResponse<TradeResponse>>(request).Response)
+            foreach (var trades in _restApiClient.ExecuteRequest<BaseResponse<TradeResponse>>(request))
             {
-                // ThetaData API: Eastern Time (ET) time zone.
-                var tradeDateTime = trade.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(trade.TimeMilliseconds);
-                yield return new Tick(tradeDateTime, symbol, trade.Condition.ToStringInvariant(), string.Empty, trade.Size, trade.Price);
+                foreach (var trade in trades.Response)
+                {
+                    // ThetaData API: Eastern Time (ET) time zone.
+                    var tradeDateTime = trade.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(trade.TimeMilliseconds);
+                    yield return new Tick(tradeDateTime, symbol, trade.Condition.ToStringInvariant(), string.Empty, trade.Size, trade.Price);
+                }
             }
         }
 
         private IEnumerable<BaseData> GetHistoricalQuoteData(RestRequest request, Symbol symbol)
         {
-            foreach (var quote in _restApiClient.ExecuteRequest<BaseResponse<QuoteResponse>>(request).Response)
+            foreach (var quotes in _restApiClient.ExecuteRequest<BaseResponse<QuoteResponse>>(request))
             {
-                // ThetaData API: Eastern Time (ET) time zone.
-                var quoteDateTime = quote.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(quote.TimeMilliseconds);
-                yield return new Tick(quoteDateTime, symbol, ThetaDataExtensions.QuoteConditions[quote.AskCondition], string.Empty, quote.BidSize, quote.BidPrice, quote.AskSize, quote.AskPrice);
+                foreach (var quote in quotes.Response)
+                {
+                    // ThetaData API: Eastern Time (ET) time zone.
+                    var quoteDateTime = quote.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(quote.TimeMilliseconds);
+                    yield return new Tick(quoteDateTime, symbol, ThetaDataExtensions.QuoteConditions[quote.AskCondition], string.Empty, quote.BidSize, quote.BidPrice, quote.AskSize, quote.AskPrice);
+                }
             }
         }
 
         private IEnumerable<BaseData>? GetOptionEndOfDay(RestRequest request, Symbol symbol, Func<DateTime, EndOfDayReportResponse, BaseData> res)
         {
-            foreach (var endOfDay in _restApiClient.ExecuteRequest<BaseResponse<EndOfDayReportResponse>>(request).Response)
+            foreach (var endOfDays in _restApiClient.ExecuteRequest<BaseResponse<EndOfDayReportResponse>>(request))
             {
-                var tradeDateTime = GetTickTime(symbol, endOfDay.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(endOfDay.LastTradeTimeMilliseconds));
-
-                // Interlocked.Increment(ref _dataPointCount);
-                yield return res(tradeDateTime, endOfDay);
+                foreach (var endOfDay in endOfDays.Response)
+                {
+                    var tradeDateTime = GetTickTime(symbol, endOfDay.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(endOfDay.LastTradeTimeMilliseconds));
+                    // Interlocked.Increment(ref _dataPointCount);
+                    yield return res(tradeDateTime, endOfDay);
+                }
             }
         }
 

@@ -15,9 +15,9 @@
 
 using RestSharp;
 using Newtonsoft.Json;
-using QuantConnect.Configuration;
-using QLNet;
 using QuantConnect.Logging;
+using QuantConnect.Configuration;
+using QuantConnect.Lean.DataSource.ThetaData.Models.Interfaces;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
 {
@@ -35,10 +35,12 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             _restClient = new RestClient(RestApiBaseUrl);
         }
 
-        public T? ExecuteRequest<T>(RestRequest request)
+        public IEnumerable<T?> ExecuteRequest<T>(RestRequest? request) where T : IBaseResponse
         {
-            try
+            while (request != null)
             {
+                Log.Debug($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: URI: {_restClient.BuildUri(request)}");
+
                 var response = _restClient.Execute(request);
 
                 if (response == null || response.StatusCode == 0 || response.StatusCode != System.Net.HttpStatusCode.OK)
@@ -50,20 +52,14 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 if ((int)response.StatusCode == 472)
                 {
                     Log.Trace($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}:NO_DATA There was no data found for the specified request.");
-                    return default;
                 }
 
+                var res = JsonConvert.DeserializeObject<T>(response.Content);
 
-                return JsonConvert.DeserializeObject<T>(response.Content);
-            }
-            catch (Exception ex)
-            {
-                throw new Exception(ex.Message);
-            }
-            finally
-            {
-                Log.Debug($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: URI: {_restClient.BuildUri(request)}");
-            }
+                yield return res;
+
+                request = res?.Header.NextPage == null ? null : new RestRequest(res.Header.NextPage, Method.GET);
+            };
         }
     }
 }
