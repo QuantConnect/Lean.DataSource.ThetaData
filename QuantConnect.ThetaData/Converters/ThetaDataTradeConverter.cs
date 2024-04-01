@@ -56,7 +56,7 @@ public class ThetaDataTradeConverter : JsonConverter<TradeResponse>
     public override TradeResponse ReadJson(JsonReader reader, Type objectType, TradeResponse existingValue, bool hasExistingValue, JsonSerializer serializer)
     {
         var token = JToken.Load(reader);
-        if (token.Type != JTokenType.Array || token.Count() != 15) throw new Exception($"{nameof(ThetaDataTradeConverter)}.{nameof(ReadJson)}: Invalid token type or count. Expected a JSON array with exactly four elements.
+        if (token.Type != JTokenType.Array || token.Count() != 15) throw new Exception($"{nameof(ThetaDataTradeConverter)}.{nameof(ReadJson)}: Invalid token type or count. Expected a JSON array with exactly four elements.");
 
         return new TradeResponse(
             timeMilliseconds: token[0]!.Value<uint>(),
