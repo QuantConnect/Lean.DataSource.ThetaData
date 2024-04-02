@@ -14,11 +14,45 @@
 */
 
 using System;
+using NodaTime;
+using QuantConnect.Data;
+using QuantConnect.Securities;
+using QuantConnect.Util;
 
 namespace QuantConnect.Lean.DataSource.ThetaData.Tests
 {
     public static class TestHelpers
     {
+        public static HistoryRequest CreateHistoryRequest(Symbol symbol, Resolution resolution, TickType tickType, DateTime startDateTime, DateTime endDateTime,
+            SecurityExchangeHours exchangeHours = null, DateTimeZone dataTimeZone = null)
+        {
+            if (exchangeHours == null)
+            {
+                exchangeHours = SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork);
+            }
+
+            if (dataTimeZone == null)
+            {
+                dataTimeZone = TimeZones.NewYork;
+            }
+
+            var dataType = LeanData.GetDataType(resolution, tickType);
+            return new HistoryRequest(
+                startDateTime,
+                endDateTime,
+                dataType,
+                symbol,
+                resolution,
+                exchangeHours,
+                dataTimeZone,
+                null,
+                true,
+                false,
+                DataNormalizationMode.Adjusted,
+                tickType
+                );
+        }
+
         public static Symbol CreateSymbol(string ticker, SecurityType securityType, OptionRight? optionRight = null, decimal? strikePrice = null, DateTime? expirationDate = null, string market = Market.USA)
         {
             switch (securityType)

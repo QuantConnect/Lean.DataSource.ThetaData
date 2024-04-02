@@ -17,10 +17,10 @@ using System;
 using NodaTime;
 using System.Linq;
 using NUnit.Framework;
-using QuantConnect.Data;
 using QuantConnect.Util;
 using QuantConnect.Securities;
-using QuantConnect.Algorithm.CSharp;
+using QuantConnect.Data.Market;
+using System.Collections.Generic;
 
 namespace QuantConnect.Lean.DataSource.ThetaData.Tests
 {
@@ -37,61 +37,82 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
         {
             var symbol = TestHelpers.CreateSymbol(ticker, securityType, OptionRight.Call, 170, new DateTime(2024, 03, 28));
 
-            var historyRequest = CreateHistoryRequest(symbol, resolution, tickType, startDate, endDate);
+            var historyRequest = TestHelpers.CreateHistoryRequest(symbol, resolution, tickType, startDate, endDate);
 
             var history = _thetaDataProvider.GetHistory(historyRequest)?.ToList();
 
             Assert.IsNull(history);
         }
 
-        [TestCase("AAPL", SecurityType.Option, OptionRight.Call, 170, "2024/03/28", Resolution.Daily, TickType.Trade)]
-        [TestCase("AAPL", SecurityType.Option, OptionRight.Call, 170, "2024/03/28", Resolution.Daily, TickType.OpenInterest)]
-        [TestCase("AAPL", SecurityType.Option, OptionRight.Call, 170, "2024/03/28", Resolution.Tick, TickType.Quote)]
-        [TestCase("AAPL", SecurityType.Option, OptionRight.Call, 170, "2024/03/28", Resolution.Second, TickType.Quote)]
-        [TestCase("AAPL", SecurityType.Option, OptionRight.Call, 170, "2024/03/28", Resolution.Hour, TickType.Quote)]
-        [TestCase("AAPL", SecurityType.Option, OptionRight.Call, 170, "2024/03/28", Resolution.Daily, TickType.Quote)]
-        public void GetHistoryRequest(string ticker, SecurityType securityType, OptionRight optionRight, decimal strikePrice, DateTime expirationDate, Resolution resolution, TickType tickType)
+        [TestCase("AAPL", OptionRight.Call, 170, "2024/03/28", Resolution.Daily, TickType.Trade, "2024/01/18", "2024/03/28")]
+        [TestCase("AAPL", OptionRight.Put, 170, "2024/03/28", Resolution.Daily, TickType.OpenInterest, "2024/01/18", "2024/03/28")]
+        [TestCase("AAPL", OptionRight.Call, 170, "2024/03/28", Resolution.Tick, TickType.Quote, "2024/03/19", "2024/03/28")]
+        [TestCase("AAPL", OptionRight.Put, 170, "2024/03/28", Resolution.Second, TickType.Quote, "2024/03/19", "2024/03/28")]
+        [TestCase("AAPL", OptionRight.Call, 170, "2024/03/28", Resolution.Hour, TickType.Quote, "2024/03/19", "2024/03/28")]
+        [TestCase("AAPL", OptionRight.Put, 170, "2024/03/28", Resolution.Daily, TickType.Quote, "2024/01/18", "2024/03/28")]
+        public void GetHistoryOptionData(string ticker, OptionRight optionRight, decimal strikePrice, DateTime expirationDate, Resolution resolution, TickType tickType, DateTime startDate, DateTime endDate)
         {
-            var symbol = TestHelpers.CreateSymbol(ticker, securityType, optionRight, strikePrice, expirationDate);
+            var symbol = TestHelpers.CreateSymbol(ticker, SecurityType.Option, optionRight, strikePrice, expirationDate);
 
-            var startDate = new DateTime(2024, 3, 18);
-            var endDate = new DateTime(2024, 3, 28);
-
-            var historyRequest = CreateHistoryRequest(symbol, resolution, tickType, startDate, endDate);
+            var historyRequest = TestHelpers.CreateHistoryRequest(symbol, resolution, tickType, startDate, endDate);
 
             var history = _thetaDataProvider.GetHistory(historyRequest).ToList();
 
             Assert.IsNotEmpty(history);
+
+            if (resolution < Resolution.Daily)
+            {
+                Assert.That(history.First().Time.Date, Is.EqualTo(startDate.ConvertFromUtc(TimeZones.EasternStandard).Date));
+                Assert.That(history.Last().Time.Date, Is.EqualTo(endDate.ConvertFromUtc(TimeZones.EasternStandard).Date));
+            }
+            else
+            {
+                Assert.That(history.First().Time.Date, Is.GreaterThanOrEqualTo(startDate.ConvertFromUtc(TimeZones.EasternStandard).Date));
+                Assert.That(history.Last().Time.Date, Is.LessThanOrEqualTo(endDate.ConvertFromUtc(TimeZones.EasternStandard).Date));
+            }
+            
+            switch (tickType)
+            {
+                case TickType.Trade:
+                    AssertTradeBars(history.Select(x => x as TradeBar), symbol, resolution.ToTimeSpan());
+                    break;
+                case TickType.Quote:
+                    AssertTickBars(history.Select(t => t as Tick), symbol);
+                    break;
+            }
         }
 
-        internal static HistoryRequest CreateHistoryRequest(Symbol symbol, Resolution resolution, TickType tickType, DateTime startDateTime, DateTime endDateTime,
-    SecurityExchangeHours exchangeHours = null, DateTimeZone dataTimeZone = null)
+        private void AssertTickBars(IEnumerable<Tick> ticks, Symbol symbol)
         {
-            if (exchangeHours == null)
+            foreach (var tick in ticks)
             {
-                exchangeHours = SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork);
+                Assert.That(tick.Symbol, Is.EqualTo(symbol));
+                Assert.That(tick.AskPrice, Is.GreaterThan(0));
+                Assert.That(tick.AskSize, Is.GreaterThan(0));
+                Assert.That(tick.BidPrice, Is.GreaterThan(0));
+                Assert.That(tick.BidSize, Is.GreaterThan(0));
+                Assert.That(tick.DataType, Is.EqualTo(MarketDataType.Tick));
+                Assert.That(tick.Time, Is.GreaterThan(default(DateTime)));
+                Assert.That(tick.EndTime, Is.GreaterThan(default(DateTime)));
+                Assert.IsNotEmpty(tick.SaleCondition);
             }
+        }
 
-            if (dataTimeZone == null)
+        private void AssertTradeBars(IEnumerable<TradeBar> tradeBars, Symbol symbol, TimeSpan period)
+        {
+            foreach (var tradeBar in tradeBars)
             {
-                dataTimeZone = TimeZones.NewYork;
+                Assert.That(tradeBar.Symbol, Is.EqualTo(symbol));
+                Assert.That(tradeBar.Period, Is.EqualTo(period));
+                Assert.That(tradeBar.Open, Is.GreaterThan(0));
+                Assert.That(tradeBar.High, Is.GreaterThan(0));
+                Assert.That(tradeBar.Low, Is.GreaterThan(0));
+                Assert.That(tradeBar.Close, Is.GreaterThan(0));
+                Assert.That(tradeBar.Price, Is.GreaterThan(0));
+                Assert.That(tradeBar.Volume, Is.GreaterThan(0));
+                Assert.That(tradeBar.Time, Is.GreaterThan(default(DateTime)));
+                Assert.That(tradeBar.EndTime, Is.GreaterThan(default(DateTime)));
             }
-
-            var dataType = LeanData.GetDataType(resolution, tickType);
-            return new HistoryRequest(
-                startDateTime,
-                endDateTime,
-                dataType,
-                symbol,
-                resolution,
-                exchangeHours,
-                dataTimeZone,
-                null,
-                true,
-                false,
-                DataNormalizationMode.Adjusted,
-                tickType
-                );
         }
     }
 }
