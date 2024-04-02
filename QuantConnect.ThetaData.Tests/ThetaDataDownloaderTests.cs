@@ -42,19 +42,22 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
             }
         }
 
+        [TestCase("AAPL", OptionRight.Call, 170, "2024/03/28", Resolution.Tick, TickType.Quote, "2024/03/19", "2024/03/28")]
+        [TestCase("AAPL", OptionRight.Call, 170, "2024/03/28", Resolution.Tick, TickType.Trade, "2024/03/19", "2024/03/28")]
+        [TestCase("AAPL", OptionRight.Put, 170, "2024/03/28", Resolution.Second, TickType.Quote, "2024/03/19", "2024/03/28")]
+        [TestCase("AAPL", OptionRight.Put, 170, "2024/03/28", Resolution.Second, TickType.Trade, "2024/03/19", "2024/03/28")]
+        [TestCase("AAPL", OptionRight.Call, 170, "2024/03/28", Resolution.Hour, TickType.Quote, "2024/03/19", "2024/03/28")]
+        [TestCase("AAPL", OptionRight.Call, 170, "2024/03/28", Resolution.Hour, TickType.Trade, "2024/03/19", "2024/03/28")]
+        [TestCase("AAPL", OptionRight.Put, 170, "2024/03/28", Resolution.Daily, TickType.Quote, "2024/01/18", "2024/03/28")]
         [TestCase("AAPL", OptionRight.Call, 170, "2024/03/28", Resolution.Daily, TickType.Trade, "2024/01/18", "2024/03/28")]
         [TestCase("AAPL", OptionRight.Put, 170, "2024/03/28", Resolution.Daily, TickType.OpenInterest, "2024/01/18", "2024/03/28")]
-        [TestCase("AAPL", OptionRight.Call, 170, "2024/03/28", Resolution.Tick, TickType.Quote, "2024/03/19", "2024/03/28")]
-        [TestCase("AAPL", OptionRight.Put, 170, "2024/03/28", Resolution.Second, TickType.Quote, "2024/03/19", "2024/03/28")]
-        [TestCase("AAPL", OptionRight.Call, 170, "2024/03/28", Resolution.Hour, TickType.Quote, "2024/03/19", "2024/03/28")]
-        [TestCase("AAPL", OptionRight.Put, 170, "2024/03/28", Resolution.Daily, TickType.Quote, "2024/01/18", "2024/03/28")]
         public void DownloadsOptionHistoricalData(string ticker, OptionRight optionRight, decimal strikePrice, DateTime expirationDate, Resolution resolution, TickType tickType, DateTime startDate, DateTime endDate)
         {
             var symbol = TestHelpers.CreateSymbol(ticker, SecurityType.Option, optionRight, strikePrice, expirationDate);
 
             var parameters = new DataDownloaderGetParameters(symbol, resolution, startDate, endDate, tickType);
 
-            var downloadedHistoricalData = _dataDownloader.Get(parameters).ToList();
+            var downloadedHistoricalData = _dataDownloader.Get(parameters);
 
             TestHelpers.ValidateHistoricalBaseData(downloadedHistoricalData, resolution, tickType, startDate, endDate, symbol);
         }
@@ -66,10 +69,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
 
             var parameters = new DataDownloaderGetParameters(symbol, resolution, startDate, endDate, tickType);
 
-            var downloadedData = _dataDownloader.Get(parameters)?.ToList();
-
-            Assert.IsNotNull(downloadedData);
-            Assert.IsNotEmpty(downloadedData);
+            var downloadedData = _dataDownloader.Get(parameters);
 
             TestHelpers.ValidateHistoricalBaseData(downloadedData, resolution, tickType, startDate, endDate);
         }

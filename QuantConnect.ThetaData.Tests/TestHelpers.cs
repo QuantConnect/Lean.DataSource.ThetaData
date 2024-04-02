@@ -30,6 +30,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
     {
         public static void ValidateHistoricalBaseData(IEnumerable<BaseData> history, Resolution resolution, TickType tickType, DateTime startDate, DateTime endDate, Symbol requestedSymbol = null)
         {
+            Assert.IsNotNull(history);
             Assert.IsNotEmpty(history);
 
             if (resolution < Resolution.Daily)
@@ -45,16 +46,34 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
 
             switch (tickType)
             {
-                case TickType.Trade:
+                case TickType.Trade when resolution != Resolution.Tick:
                     AssertTradeBars(history.Select(x => x as TradeBar), requestedSymbol, resolution.ToTimeSpan());
                     break;
+                case TickType.Trade:
+                    AssertTradeTickBars(history.Select(x => x as Tick), requestedSymbol);
+                    break;
                 case TickType.Quote:
-                    AssertTickBars(history.Select(t => t as Tick), requestedSymbol);
+                    AssertTickQuoteBars(history.Select(t => t as Tick), requestedSymbol);
                     break;
             }
         }
 
-        public static void AssertTickBars(IEnumerable<Tick> ticks, Symbol symbol = null)
+        public static void AssertTradeTickBars(IEnumerable<Tick> ticks, Symbol symbol = null)
+        {
+            foreach (var tick in ticks)
+            {
+                if (symbol != null)
+                {
+                    Assert.That(tick.Symbol, Is.EqualTo(symbol));
+                }
+
+                Assert.That(tick.Price, Is.GreaterThan(0));
+                Assert.That(tick.Value, Is.GreaterThan(0));
+                Assert.IsNotEmpty(tick.SaleCondition);
+            }
+        }
+
+        public static void AssertTickQuoteBars(IEnumerable<Tick> ticks, Symbol symbol = null)
         {
             foreach (var tick in ticks)
             {

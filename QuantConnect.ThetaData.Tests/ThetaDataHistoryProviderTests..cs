@@ -14,13 +14,8 @@
 */
 
 using System;
-using NodaTime;
 using System.Linq;
 using NUnit.Framework;
-using QuantConnect.Util;
-using QuantConnect.Securities;
-using QuantConnect.Data.Market;
-using System.Collections.Generic;
 
 namespace QuantConnect.Lean.DataSource.ThetaData.Tests
 {
@@ -39,17 +34,20 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
 
             var historyRequest = TestHelpers.CreateHistoryRequest(symbol, resolution, tickType, startDate, endDate);
 
-            var history = _thetaDataProvider.GetHistory(historyRequest)?.ToList();
+            var history = _thetaDataProvider.GetHistory(historyRequest);
 
             Assert.IsNull(history);
         }
 
         [TestCase("AAPL", OptionRight.Call, 170, "2024/03/28", Resolution.Daily, TickType.Trade, "2024/01/18", "2024/03/28")]
         [TestCase("AAPL", OptionRight.Put, 170, "2024/03/28", Resolution.Daily, TickType.OpenInterest, "2024/01/18", "2024/03/28")]
-        [TestCase("AAPL", OptionRight.Call, 170, "2024/03/28", Resolution.Tick, TickType.Quote, "2024/03/19", "2024/03/28")]
-        [TestCase("AAPL", OptionRight.Put, 170, "2024/03/28", Resolution.Second, TickType.Quote, "2024/03/19", "2024/03/28")]
-        [TestCase("AAPL", OptionRight.Call, 170, "2024/03/28", Resolution.Hour, TickType.Quote, "2024/03/19", "2024/03/28")]
         [TestCase("AAPL", OptionRight.Put, 170, "2024/03/28", Resolution.Daily, TickType.Quote, "2024/01/18", "2024/03/28")]
+        [TestCase("AAPL", OptionRight.Call, 170, "2024/03/28", Resolution.Tick, TickType.Quote, "2024/03/19", "2024/03/28")]
+        [TestCase("AAPL", OptionRight.Call, 170, "2024/03/28", Resolution.Tick, TickType.Trade, "2024/03/19", "2024/03/28")]
+        [TestCase("AAPL", OptionRight.Put, 170, "2024/03/28", Resolution.Second, TickType.Quote, "2024/03/19", "2024/03/28")]
+        [TestCase("AAPL", OptionRight.Put, 170, "2024/03/28", Resolution.Second, TickType.Trade, "2024/03/19", "2024/03/28")]
+        [TestCase("AAPL", OptionRight.Call, 170, "2024/03/28", Resolution.Hour, TickType.Quote, "2024/03/19", "2024/03/28")]
+        [TestCase("AAPL", OptionRight.Call, 170, "2024/03/28", Resolution.Hour, TickType.Trade, "2024/03/19", "2024/03/28")]
         public void GetHistoryOptionData(string ticker, OptionRight optionRight, decimal strikePrice, DateTime expirationDate, Resolution resolution, TickType tickType, DateTime startDate, DateTime endDate)
         {
             var symbol = TestHelpers.CreateSymbol(ticker, SecurityType.Option, optionRight, strikePrice, expirationDate);
@@ -58,28 +56,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
 
             var history = _thetaDataProvider.GetHistory(historyRequest).ToList();
 
-            Assert.IsNotEmpty(history);
-
-            if (resolution < Resolution.Daily)
-            {
-                Assert.That(history.First().Time.Date, Is.EqualTo(startDate.ConvertFromUtc(TimeZones.EasternStandard).Date));
-                Assert.That(history.Last().Time.Date, Is.EqualTo(endDate.ConvertFromUtc(TimeZones.EasternStandard).Date));
-            }
-            else
-            {
-                Assert.That(history.First().Time.Date, Is.GreaterThanOrEqualTo(startDate.ConvertFromUtc(TimeZones.EasternStandard).Date));
-                Assert.That(history.Last().Time.Date, Is.LessThanOrEqualTo(endDate.ConvertFromUtc(TimeZones.EasternStandard).Date));
-            }
-            
-            switch (tickType)
-            {
-                case TickType.Trade:
-                    TestHelpers.AssertTradeBars(history.Select(x => x as TradeBar), symbol, resolution.ToTimeSpan());
-                    break;
-                case TickType.Quote:
-                    TestHelpers.AssertTickBars(history.Select(t => t as Tick), symbol);
-                    break;
-            }
+            TestHelpers.ValidateHistoricalBaseData(history, resolution, tickType, startDate, endDate, symbol);
         }
     }
 }

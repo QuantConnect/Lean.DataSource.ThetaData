@@ -16,9 +16,11 @@
 using NodaTime;
 using RestSharp;
 using QuantConnect.Data;
+using QuantConnect.Util;
 using QuantConnect.Logging;
 using QuantConnect.Interfaces;
 using QuantConnect.Data.Market;
+using QuantConnect.Data.Consolidators;
 using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Lean.Engine.HistoricalData;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
@@ -135,34 +137,76 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             optionRequest.AddQueryParameter("strike", ticker[2]);
             optionRequest.AddQueryParameter("right", ticker[3]);
 
-            switch (tickType)
+            if (resolution == Resolution.Daily)
             {
-                case TickType.Trade when resolution == Resolution.Daily:
-                    optionRequest.Resource = "/hist/option/eod";
-                    var period = resolution.ToTimeSpan();
-                    return GetOptionEndOfDay(optionRequest,
-                        // If OHLC prices zero, low trading activity, empty result, low volatility.
-                        (eof) => eof.Open == 0 || eof.High == 0 || eof.Low == 0 || eof.Close == 0,
-                        (tradeDateTime, eof) => new TradeBar(tradeDateTime, symbol, eof.Open, eof.High, eof.Low, eof.Close, eof.Volume, period));
-                case TickType.Quote when resolution == Resolution.Daily:
-                    optionRequest.Resource = "/hist/option/eod";
-                    return GetOptionEndOfDay(optionRequest,
-                        // If Ask/Bid - prices/sizes zero, low quote activity, empty result, low volatility.
-                        (eof) => eof.AskPrice == 0 || eof.AskSize == 0 || eof.BidPrice == 0 || eof.BidSize == 0,
-                        (quoteDateTime, eof) => new Tick(quoteDateTime, symbol, eof.AskCondition, ThetaDataExtensions.Exchanges[eof.AskExchange], eof.BidSize, eof.BidPrice, eof.AskSize, eof.AskPrice));
-                case TickType.OpenInterest when resolution == Resolution.Daily:
-                    optionRequest.Resource = "/hist/option/open_interest";
-                    return GetHistoricalOpenInterestData(optionRequest, symbol);
-                case TickType.Trade:
-                    optionRequest.Resource = "/hist/option/trade";
-                    return GetHistoricalTradeData(optionRequest, symbol);
-                case TickType.Quote:
-                    optionRequest.AddQueryParameter("ivl", GetIntervalsInMilliseconds(resolution));
-                    optionRequest.Resource = "/hist/option/quote";
-                    return GetHistoricalQuoteData(optionRequest, symbol);
-                default:
-                    throw new ArgumentException("");
+                switch (tickType)
+                {
+                    case TickType.Trade:
+                        optionRequest.Resource = "/hist/option/eod";
+                        var period = resolution.ToTimeSpan();
+                        return GetOptionEndOfDay(optionRequest,
+                            // If OHLC prices zero, low trading activity, empty result, low volatility.
+                            (eof) => eof.Open == 0 || eof.High == 0 || eof.Low == 0 || eof.Close == 0,
+                            (tradeDateTime, eof) => new TradeBar(tradeDateTime, symbol, eof.Open, eof.High, eof.Low, eof.Close, eof.Volume, period));
+                    case TickType.Quote:
+                        optionRequest.Resource = "/hist/option/eod";
+                        return GetOptionEndOfDay(optionRequest,
+                            // If Ask/Bid - prices/sizes zero, low quote activity, empty result, low volatility.
+                            (eof) => eof.AskPrice == 0 || eof.AskSize == 0 || eof.BidPrice == 0 || eof.BidSize == 0,
+                            (quoteDateTime, eof) => new Tick(quoteDateTime, symbol, eof.AskCondition, ThetaDataExtensions.Exchanges[eof.AskExchange], eof.BidSize, eof.BidPrice, eof.AskSize, eof.AskPrice));
+                    case TickType.OpenInterest:
+                        optionRequest.Resource = "/hist/option/open_interest";
+                        return GetHistoricalOpenInterestData(optionRequest, symbol);
+                    default:
+                        throw new ArgumentException($"Invalid tick type: {tickType}.");
+                }
             }
+            else
+            {
+                switch (tickType)
+                {
+                    case TickType.Trade:
+                        optionRequest.Resource = "/hist/option/trade";
+                        return GetHistoricalTrade(optionRequest, symbol, resolution, tickType);
+                    case TickType.Quote:
+                        optionRequest.AddQueryParameter("ivl", GetIntervalsInMilliseconds(resolution));
+                        optionRequest.Resource = "/hist/option/quote";
+                        return GetHistoricalQuoteData(optionRequest, symbol);
+                    default:
+                        throw new ArgumentException($"Invalid tick type: {tickType}.");
+                }
+            }
+        }
+
+        private IEnumerable<BaseData> GetHistoricalTrade(RestRequest request, Symbol symbol, Resolution resolution, TickType tickType)
+        {
+            IDataConsolidator consolidator;
+            IEnumerable<BaseData> history;
+
+            consolidator = resolution != Resolution.Tick
+                ? new TickConsolidator(resolution.ToTimeSpan())
+                : FilteredIdentityDataConsolidator.ForTickType(tickType);
+            history = GetHistoricalTickTradeData(request, symbol);
+
+            BaseData? consolidatedData = null;
+            DataConsolidatedHandler onDataConsolidated = (s, e) =>
+            {
+                consolidatedData = (BaseData)e;
+            };
+            consolidator.DataConsolidated += onDataConsolidated;
+
+            foreach (var data in history)
+            {
+                consolidator.Update(data);
+                if (consolidatedData != null)
+                {
+                    yield return consolidatedData;
+                    consolidatedData = null;
+                }
+            }
+
+            consolidator.DataConsolidated -= onDataConsolidated;
+            consolidator.DisposeSafely();
         }
 
         private IEnumerable<BaseData> GetHistoricalOpenInterestData(RestRequest request, Symbol symbol)
@@ -178,7 +222,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             }
         }
 
-        private IEnumerable<BaseData> GetHistoricalTradeData(RestRequest request, Symbol symbol)
+        private IEnumerable<BaseData> GetHistoricalTickTradeData(RestRequest request, Symbol symbol)
         {
             foreach (var trades in _restApiClient.ExecuteRequest<BaseResponse<TradeResponse>>(request))
             {
