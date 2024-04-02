@@ -140,11 +140,15 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 case TickType.Trade when resolution == Resolution.Daily:
                     optionRequest.Resource = "/hist/option/eod";
                     var period = resolution.ToTimeSpan();
-                    return GetOptionEndOfDay(optionRequest, symbol,
+                    return GetOptionEndOfDay(optionRequest,
+                        // If OHLC prices zero, low trading activity, empty result, low volatility.
+                        (eof) => eof.Open == 0 || eof.High == 0 || eof.Low == 0 || eof.Close == 0,
                         (tradeDateTime, eof) => new TradeBar(tradeDateTime, symbol, eof.Open, eof.High, eof.Low, eof.Close, eof.Volume, period));
                 case TickType.Quote when resolution == Resolution.Daily:
                     optionRequest.Resource = "/hist/option/eod";
-                    return GetOptionEndOfDay(optionRequest, symbol,
+                    return GetOptionEndOfDay(optionRequest,
+                        // If Ask/Bid - prices/sizes zero, low quote activity, empty result, low volatility.
+                        (eof) => eof.AskPrice == 0 || eof.AskSize == 0 || eof.BidPrice == 0 || eof.BidSize == 0,
                         (quoteDateTime, eof) => new Tick(quoteDateTime, symbol, eof.AskCondition, ThetaDataExtensions.Exchanges[eof.AskExchange], eof.BidSize, eof.BidPrice, eof.AskSize, eof.AskPrice));
                 case TickType.OpenInterest when resolution == Resolution.Daily:
                     optionRequest.Resource = "/hist/option/open_interest";
@@ -161,12 +165,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             }
         }
 
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="request"></param>
-        /// <param name="symbol"></param>
-        /// <returns></returns>
         private IEnumerable<BaseData> GetHistoricalOpenInterestData(RestRequest request, Symbol symbol)
         {
             foreach (var openInterests in _restApiClient.ExecuteRequest<BaseResponse<OpenInterestResponse>>(request))
@@ -199,6 +197,12 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             {
                 foreach (var quote in quotes.Response)
                 {
+                    // If Ask/Bid - prices/sizes zero, low quote activity, empty result, low volatility.
+                    if (quote.AskPrice == 0 || quote.AskSize == 0 || quote.BidPrice == 0 || quote.BidSize == 0)
+                    {
+                        continue;
+                    }
+
                     // ThetaData API: Eastern Time (ET) time zone.
                     var quoteDateTime = quote.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(quote.TimeMilliseconds);
                     yield return new Tick(quoteDateTime, symbol, quote.AskCondition, ThetaDataExtensions.Exchanges[quote.AskExchange], quote.BidSize, quote.BidPrice, quote.AskSize, quote.AskPrice);
@@ -206,13 +210,19 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             }
         }
 
-        private IEnumerable<BaseData>? GetOptionEndOfDay(RestRequest request, Symbol symbol, Func<DateTime, EndOfDayReportResponse, BaseData> res)
+        private IEnumerable<BaseData>? GetOptionEndOfDay(RestRequest request, Func<EndOfDayReportResponse, bool> validateEmptyResponse, Func<DateTime, EndOfDayReportResponse, BaseData> res)
         {
             foreach (var endOfDays in _restApiClient.ExecuteRequest<BaseResponse<EndOfDayReportResponse>>(request))
             {
                 foreach (var endOfDay in endOfDays.Response)
                 {
-                    var tradeDateTime = GetTickTime(symbol, endOfDay.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(endOfDay.LastTradeTimeMilliseconds));
+                    if (validateEmptyResponse(endOfDay))
+                    {
+                        continue;
+                    }
+
+                    // ThetaData API: Eastern Time (ET) time zone.
+                    var tradeDateTime = endOfDay.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(endOfDay.LastTradeTimeMilliseconds);
                     yield return res(tradeDateTime, endOfDay);
                 }
             }
