@@ -14,6 +14,8 @@
 */
 
 using QuantConnect.Interfaces;
+using QuantConnect.Lean.DataSource.ThetaData.Models.Common;
+using RestSharp;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
 {
@@ -64,7 +66,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <param name="requestedDate">The date from which to find option contracts.</param>
         /// <returns>A collection of option contracts.</returns>
         /// <exception cref="ArgumentException">Thrown when the security type is not supported or invalid.</exception>
-        private IEnumerable<Symbol> GetOptionChain(Symbol symbol, DateTime requestedDate)
+        public IEnumerable<Symbol> GetOptionChain(Symbol symbol, DateTime requestedDate)
         {
             if ((symbol.SecurityType.IsOption() && symbol.SecurityType == SecurityType.FutureOption) ||
                 (symbol.HasUnderlying && symbol.Underlying.SecurityType != SecurityType.Equity && symbol.Underlying.SecurityType != SecurityType.Index))
@@ -73,6 +75,22 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             }
 
             return _optionChainProvider.GetOptionContractList(symbol, requestedDate);
+        }
+
+        /// <summary>
+        /// Returns all expirations date for a ticker.
+        /// </summary>
+        /// <param name="ticker">The underlying symbol value to list expirations for.</param>
+        /// <returns>An enumerable collection of expiration dates in string format (e.g., "20240303" for March 3, 2024).</returns>
+        public IEnumerable<string> GetExpirationDates(string ticker)
+        {
+            var request = new RestRequest("/list/expirations", Method.GET);
+            request.AddQueryParameter("root", ticker);
+
+            foreach (var expirationDate in _restApiClient.ExecuteRequest<BaseResponse<string>>(request).SelectMany(x => x.Response))
+            {
+                yield return expirationDate;
+            }
         }
 
     }

@@ -15,14 +15,82 @@
 
 using System;
 using NodaTime;
+using System.Linq;
+using NUnit.Framework;
 using QuantConnect.Data;
-using QuantConnect.Securities;
 using QuantConnect.Util;
+using Microsoft.CodeAnalysis;
+using QuantConnect.Securities;
+using QuantConnect.Data.Market;
+using System.Collections.Generic;
 
 namespace QuantConnect.Lean.DataSource.ThetaData.Tests
 {
     public static class TestHelpers
     {
+        public static void ValidateHistoricalBaseData(IEnumerable<BaseData> history, Resolution resolution, TickType tickType, DateTime startDate, DateTime endDate, Symbol requestedSymbol = null)
+        {
+            Assert.IsNotEmpty(history);
+
+            if (resolution < Resolution.Daily)
+            {
+                Assert.That(history.First().Time.Date, Is.EqualTo(startDate.ConvertFromUtc(TimeZones.EasternStandard).Date));
+                Assert.That(history.Last().Time.Date, Is.EqualTo(endDate.ConvertFromUtc(TimeZones.EasternStandard).Date));
+            }
+            else
+            {
+                Assert.That(history.First().Time.Date, Is.GreaterThanOrEqualTo(startDate.ConvertFromUtc(TimeZones.EasternStandard).Date));
+                Assert.That(history.Last().Time.Date, Is.LessThanOrEqualTo(endDate.ConvertFromUtc(TimeZones.EasternStandard).Date));
+            }
+
+            switch (tickType)
+            {
+                case TickType.Trade:
+                    AssertTradeBars(history.Select(x => x as TradeBar), requestedSymbol, resolution.ToTimeSpan());
+                    break;
+                case TickType.Quote:
+                    AssertTickBars(history.Select(t => t as Tick), requestedSymbol);
+                    break;
+            }
+        }
+
+        public static void AssertTickBars(IEnumerable<Tick> ticks, Symbol symbol = null)
+        {
+            foreach (var tick in ticks)
+            {
+                if (symbol != null)
+                {
+                    Assert.That(tick.Symbol, Is.EqualTo(symbol));
+                }
+
+                Assert.That(tick.AskPrice, Is.GreaterThan(0));
+                Assert.That(tick.AskSize, Is.GreaterThan(0));
+                Assert.That(tick.BidPrice, Is.GreaterThan(0));
+                Assert.That(tick.BidSize, Is.GreaterThan(0));
+                Assert.That(tick.DataType, Is.EqualTo(MarketDataType.Tick));
+                Assert.That(tick.Time, Is.GreaterThan(default(DateTime)));
+                Assert.That(tick.EndTime, Is.GreaterThan(default(DateTime)));
+                Assert.IsNotEmpty(tick.SaleCondition);
+            }
+        }
+
+        public static void AssertTradeBars(IEnumerable<TradeBar> tradeBars, Symbol symbol, TimeSpan period)
+        {
+            foreach (var tradeBar in tradeBars)
+            {
+                Assert.That(tradeBar.Symbol, Is.EqualTo(symbol));
+                Assert.That(tradeBar.Period, Is.EqualTo(period));
+                Assert.That(tradeBar.Open, Is.GreaterThan(0));
+                Assert.That(tradeBar.High, Is.GreaterThan(0));
+                Assert.That(tradeBar.Low, Is.GreaterThan(0));
+                Assert.That(tradeBar.Close, Is.GreaterThan(0));
+                Assert.That(tradeBar.Price, Is.GreaterThan(0));
+                Assert.That(tradeBar.Volume, Is.GreaterThan(0));
+                Assert.That(tradeBar.Time, Is.GreaterThan(default(DateTime)));
+                Assert.That(tradeBar.EndTime, Is.GreaterThan(default(DateTime)));
+            }
+        }
+
         public static HistoryRequest CreateHistoryRequest(Symbol symbol, Resolution resolution, TickType tickType, DateTime startDateTime, DateTime endDateTime,
             SecurityExchangeHours exchangeHours = null, DateTimeZone dataTimeZone = null)
         {

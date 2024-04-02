@@ -74,44 +74,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
             switch (tickType)
             {
                 case TickType.Trade:
-                    AssertTradeBars(history.Select(x => x as TradeBar), symbol, resolution.ToTimeSpan());
+                    TestHelpers.AssertTradeBars(history.Select(x => x as TradeBar), symbol, resolution.ToTimeSpan());
                     break;
                 case TickType.Quote:
-                    AssertTickBars(history.Select(t => t as Tick), symbol);
+                    TestHelpers.AssertTickBars(history.Select(t => t as Tick), symbol);
                     break;
-            }
-        }
-
-        private void AssertTickBars(IEnumerable<Tick> ticks, Symbol symbol)
-        {
-            foreach (var tick in ticks)
-            {
-                Assert.That(tick.Symbol, Is.EqualTo(symbol));
-                Assert.That(tick.AskPrice, Is.GreaterThan(0));
-                Assert.That(tick.AskSize, Is.GreaterThan(0));
-                Assert.That(tick.BidPrice, Is.GreaterThan(0));
-                Assert.That(tick.BidSize, Is.GreaterThan(0));
-                Assert.That(tick.DataType, Is.EqualTo(MarketDataType.Tick));
-                Assert.That(tick.Time, Is.GreaterThan(default(DateTime)));
-                Assert.That(tick.EndTime, Is.GreaterThan(default(DateTime)));
-                Assert.IsNotEmpty(tick.SaleCondition);
-            }
-        }
-
-        private void AssertTradeBars(IEnumerable<TradeBar> tradeBars, Symbol symbol, TimeSpan period)
-        {
-            foreach (var tradeBar in tradeBars)
-            {
-                Assert.That(tradeBar.Symbol, Is.EqualTo(symbol));
-                Assert.That(tradeBar.Period, Is.EqualTo(period));
-                Assert.That(tradeBar.Open, Is.GreaterThan(0));
-                Assert.That(tradeBar.High, Is.GreaterThan(0));
-                Assert.That(tradeBar.Low, Is.GreaterThan(0));
-                Assert.That(tradeBar.Close, Is.GreaterThan(0));
-                Assert.That(tradeBar.Price, Is.GreaterThan(0));
-                Assert.That(tradeBar.Volume, Is.GreaterThan(0));
-                Assert.That(tradeBar.Time, Is.GreaterThan(default(DateTime)));
-                Assert.That(tradeBar.EndTime, Is.GreaterThan(default(DateTime)));
             }
         }
     }

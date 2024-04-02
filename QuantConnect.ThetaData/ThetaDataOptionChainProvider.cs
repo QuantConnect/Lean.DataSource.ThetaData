@@ -58,7 +58,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         }
 
         /// <inheritdoc />
-        public IEnumerable<Symbol> GetOptionContractList(Symbol symbol, DateTime requestedMinimumDate)
+        public IEnumerable<Symbol> GetOptionContractList(Symbol symbol, DateTime symbolExpiryDate)
         {
             // Only equity and index options are supported
             if (symbol.SecurityType == SecurityType.Future || symbol.SecurityType == SecurityType.FutureOption)
@@ -76,43 +76,15 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
             var strikeRequest = new RestRequest("/list/strikes", Method.GET);
             strikeRequest.AddQueryParameter("root", underlying.Value);
+            strikeRequest.AddOrUpdateParameter("exp", symbolExpiryDate.ConvertToThetaDataDateFormat());
 
-            foreach (var expiryDateStr in GetExpirationDates(underlying.Value))
+            foreach (var strike in _restClient.ExecuteRequest<BaseResponse<decimal>>(strikeRequest).SelectMany(strikes => strikes.Response))
             {
-                var expiryDate = expiryDateStr.ConvertFromThetaDataDateFormat();
-
-                // Skip items with expiry dates before the requested minimum date.
-                if (expiryDate < requestedMinimumDate)
+                foreach (var right in optionRights)
                 {
-                    continue;
+                    yield return _symbolMapper.GetLeanSymbol(underlying.Value, optionsSecurityType, underlying.ID.Market, OptionStyle.American,
+                        symbolExpiryDate, strike, right, underlying);
                 }
-
-                strikeRequest.AddOrUpdateParameter("exp", expiryDateStr);
-
-                foreach (var strike in _restClient.ExecuteRequest<BaseResponse<decimal>>(strikeRequest).SelectMany(strikes => strikes.Response))
-                {
-                    foreach (var right in optionRights)
-                    {
-                        yield return _symbolMapper.GetLeanSymbol(underlying.Value, optionsSecurityType, underlying.ID.Market, OptionStyle.American,
-                            expiryDate, strike, right, underlying);
-                    }
-                }
-            }
-        }
-
-        /// <summary>
-        /// Returns all expirations date for a ticker.
-        /// </summary>
-        /// <param name="ticker">The underlying symbol value to list expirations for.</param>
-        /// <returns>An enumerable collection of expiration dates in string format (e.g., "20240303" for March 3, 2024).</returns>
-        private IEnumerable<string> GetExpirationDates(string ticker)
-        {
-            var request = new RestRequest("/list/expirations", Method.GET);
-            request.AddQueryParameter("root", ticker);
-
-            foreach (var expirationDate in _restClient.ExecuteRequest<BaseResponse<string>>(request).SelectMany(x => x.Response))
-            {
-                yield return expirationDate;
             }
         }
     }
