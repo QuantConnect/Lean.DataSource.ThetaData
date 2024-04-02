@@ -33,7 +33,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <summary>
         /// Provider The TheData Rest Api client instance.
         /// </summary>
-        private readonly ThetaDataRestApiClient _restClient;
+        private readonly ThetaDataRestApiClient _restApiClient;
 
         /// <summary>
         /// Collection of pre-defined option rights.
@@ -50,15 +50,15 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// Initializes a new instance of the <see cref="ThetaDataOptionChainProvider"/>
         /// </summary>
         /// <param name="symbolMapper">The TheData mapping between Lean symbols and brokerage specific symbols.</param>
-        /// <param name="restClient">The client for interacting with the Theta Data REST API by sending HTTP requests</param>
-        public ThetaDataOptionChainProvider(ThetaDataSymbolMapper symbolMapper, ThetaDataRestApiClient restClient)
+        /// <param name="restApiClient">The client for interacting with the Theta Data REST API by sending HTTP requests</param>
+        public ThetaDataOptionChainProvider(ThetaDataSymbolMapper symbolMapper, ThetaDataRestApiClient restApiClient)
         {
             _symbolMapper = symbolMapper;
-            _restClient = restClient;
+            _restApiClient = restApiClient;
         }
 
         /// <inheritdoc />
-        public IEnumerable<Symbol> GetOptionContractList(Symbol symbol, DateTime symbolExpiryDate)
+        public IEnumerable<Symbol> GetOptionContractList(Symbol symbol, DateTime date)
         {
             // Only equity and index options are supported
             if (symbol.SecurityType == SecurityType.Future || symbol.SecurityType == SecurityType.FutureOption)
@@ -76,15 +76,44 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
             var strikeRequest = new RestRequest("/list/strikes", Method.GET);
             strikeRequest.AddQueryParameter("root", underlying.Value);
-            strikeRequest.AddOrUpdateParameter("exp", symbolExpiryDate.ConvertToThetaDataDateFormat());
-
-            foreach (var strike in _restClient.ExecuteRequest<BaseResponse<decimal>>(strikeRequest).SelectMany(strikes => strikes.Response))
+            foreach (var expiryDateStr in GetExpirationDates(underlying.Value))
             {
-                foreach (var right in optionRights)
+                var expirationDate = expiryDateStr.ConvertFromThetaDataDateFormat();
+
+                if (expirationDate < date)
                 {
-                    yield return _symbolMapper.GetLeanSymbol(underlying.Value, optionsSecurityType, underlying.ID.Market, OptionStyle.American,
-                        symbolExpiryDate, strike, right, underlying);
+                    continue;
                 }
+
+                if (expirationDate > new DateTime(2024, 05, 1))
+                    continue;
+
+                strikeRequest.AddOrUpdateParameter("exp", expirationDate.ConvertToThetaDataDateFormat());
+
+                foreach (var strike in _restApiClient.ExecuteRequest<BaseResponse<decimal>>(strikeRequest).SelectMany(strikes => strikes.Response))
+                {
+                    foreach (var right in optionRights)
+                    {
+                        yield return _symbolMapper.GetLeanSymbol(underlying.Value, optionsSecurityType, underlying.ID.Market, OptionStyle.American,
+                            expirationDate, strike, right, underlying);
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Returns all expirations date for a ticker.
+        /// </summary>
+        /// <param name="ticker">The underlying symbol value to list expirations for.</param>
+        /// <returns>An enumerable collection of expiration dates in string format (e.g., "20240303" for March 3, 2024).</returns>
+        public IEnumerable<string> GetExpirationDates(string ticker)
+        {
+            var request = new RestRequest("/list/expirations", Method.GET);
+            request.AddQueryParameter("root", ticker);
+
+            foreach (var expirationDate in _restApiClient.ExecuteRequest<BaseResponse<string>>(request).SelectMany(x => x.Response))
+            {
+                yield return expirationDate;
             }
         }
     }

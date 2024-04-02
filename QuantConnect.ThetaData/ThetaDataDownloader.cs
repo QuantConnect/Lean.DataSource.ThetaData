@@ -129,18 +129,9 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
         protected virtual IEnumerable<Symbol> GetOptions(Symbol symbol, DateTime startUtc, DateTime endUtc)
         {
-            foreach (var expiryDateStr in _historyProvider.GetExpirationDates(symbol.Underlying.Value))
+            foreach (var option in _historyProvider.GetOptionChain(symbol, startUtc, endUtc))
             {
-                var expiryDate = expiryDateStr.ConvertFromThetaDataDateFormat();
-
-                // Skip items with expiry dates before the requested minimum date.
-                if (startUtc <= expiryDate && expiryDate <= endUtc)
-                {
-                    foreach (var option in _historyProvider.GetOptionChain(symbol, endUtc))
-                    {
-                        yield return option;
-                    }
-                }
+                yield return option;
             }
         }
 

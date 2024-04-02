@@ -77,21 +77,15 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             return _optionChainProvider.GetOptionContractList(symbol, requestedDate);
         }
 
-        /// <summary>
-        /// Returns all expirations date for a ticker.
-        /// </summary>
-        /// <param name="ticker">The underlying symbol value to list expirations for.</param>
-        /// <returns>An enumerable collection of expiration dates in string format (e.g., "20240303" for March 3, 2024).</returns>
-        public IEnumerable<string> GetExpirationDates(string ticker)
+        public IEnumerable<Symbol> GetOptionChain(Symbol requestedSymbol, DateTime startDate, DateTime endDate)
         {
-            var request = new RestRequest("/list/expirations", Method.GET);
-            request.AddQueryParameter("root", ticker);
-
-            foreach (var expirationDate in _restApiClient.ExecuteRequest<BaseResponse<string>>(request).SelectMany(x => x.Response))
+            foreach (var symbol in _optionChainProvider.GetOptionContractList(requestedSymbol, startDate))
             {
-                yield return expirationDate;
+                if (symbol.ID.Date >= startDate && symbol.ID.Date <= endDate)
+                {
+                    yield return symbol;
+                }
             }
         }
-
     }
 }
