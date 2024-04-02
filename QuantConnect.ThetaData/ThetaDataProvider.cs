@@ -169,9 +169,9 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
         private void HandleQuoteMessage(Symbol symbol, WebSocketQuote webSocketQuote)
         {
-            var timeDateQuote = GetTickTime(symbol, webSocketQuote.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(webSocketQuote.DayTimeMilliseconds));
-            // TODO: Exchange name.
-            var tick = new Tick(timeDateQuote, symbol, webSocketQuote.BidCondition.ToStringInvariant(), string.Empty,
+            // ThetaData API: Eastern Time (ET) time zone.
+            var timeDateQuote = webSocketQuote.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(webSocketQuote.DayTimeMilliseconds);
+            var tick = new Tick(timeDateQuote, symbol, webSocketQuote.BidCondition.ToStringInvariant(), ThetaDataExtensions.Exchanges[webSocketQuote.BidExchange],
             bidSize: webSocketQuote.BidSize, bidPrice: webSocketQuote.BidPrice,
             askSize: webSocketQuote.AskSize, askPrice: webSocketQuote.AskPrice);
 
@@ -183,9 +183,9 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
         private void HandleTradeMessage(Symbol symbol, WebSocketTrade webSocketTrade)
         {
-            var timeDateTrade = GetTickTime(symbol, webSocketTrade.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(webSocketTrade.DayTimeMilliseconds));
-            // TODO: Exchange name.
-            var tick = new Tick(timeDateTrade, symbol, webSocketTrade.Condition.ToStringInvariant(), string.Empty, webSocketTrade.Size, webSocketTrade.Price);
+            // ThetaData API: Eastern Time (ET) time zone.
+            var timeDateTrade = webSocketTrade.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(webSocketTrade.DayTimeMilliseconds);
+            var tick = new Tick(timeDateTrade, symbol, webSocketTrade.Condition.ToStringInvariant(), ThetaDataExtensions.Exchanges[webSocketTrade.Exchange], webSocketTrade.Size, webSocketTrade.Price);
             lock (_lock)
             {
                 _dataAggregator.Update(tick);

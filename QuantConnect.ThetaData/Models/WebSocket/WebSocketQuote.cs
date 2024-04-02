@@ -26,7 +26,7 @@ public readonly struct WebSocketQuote
     public int BidSize { get; }
 
     [JsonProperty("bid_exchange")]
-    public int BidExchange { get; }
+    public byte BidExchange { get; }
 
     [JsonProperty("bid")]
     public decimal BidPrice { get; }
@@ -38,7 +38,7 @@ public readonly struct WebSocketQuote
     public int AskSize { get; }
 
     [JsonProperty("ask_exchange")]
-    public int AskExchange { get; }
+    public byte AskExchange { get; }
 
     [JsonProperty("ask")]
     public decimal AskPrice { get; }
@@ -52,7 +52,7 @@ public readonly struct WebSocketQuote
     [JsonConstructor]
     public WebSocketQuote(
         int dayTimeMilliseconds,
-        int bidSize, int bidExchange, decimal bidPrice, int bidCondition, int askSize, int askExchange, decimal askPrice, int askCondition, string date)
+        int bidSize, byte bidExchange, decimal bidPrice, int bidCondition, int askSize, byte askExchange, decimal askPrice, int askCondition, string date)
     {
         DayTimeMilliseconds = dayTimeMilliseconds;
         BidSize = bidSize;

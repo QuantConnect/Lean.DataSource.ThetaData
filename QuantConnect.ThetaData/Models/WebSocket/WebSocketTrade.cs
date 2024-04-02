@@ -35,13 +35,13 @@ public readonly struct WebSocketTrade
     public decimal Price { get; }
 
     [JsonProperty("exchange")]
-    public int Exchange { get; }
+    public byte Exchange { get; }
 
     [JsonProperty("date")]
     public string Date { get; }
 
     [JsonConstructor]
-    public WebSocketTrade(int dayTimeMilliseconds, int sequence, int size, int condition, decimal price, int exchange, string date)
+    public WebSocketTrade(int dayTimeMilliseconds, int sequence, int size, int condition, decimal price, byte exchange, string date)
     {
         DayTimeMilliseconds = dayTimeMilliseconds;
         Sequence = sequence;
