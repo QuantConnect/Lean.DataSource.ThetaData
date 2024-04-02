@@ -16,7 +16,6 @@
 using RestSharp;
 using Newtonsoft.Json;
 using QuantConnect.Logging;
-using QuantConnect.Configuration;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Interfaces;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
@@ -26,15 +25,31 @@ namespace QuantConnect.Lean.DataSource.ThetaData
     /// </summary>
     public class ThetaDataRestApiClient
     {
-        private readonly static string RestApiBaseUrl = Config.Get("polygon-api-url", "http://127.0.0.1:25510/v2");
+        /// <summary>
+        /// Represents the base URL for the REST API.
+        /// </summary>
+        private const string RestApiBaseUrl = "http://127.0.0.1:25510/v2";
 
+        /// <summary>
+        /// Represents a client for making RESTFul API requests.
+        /// </summary>
         private readonly RestClient _restClient;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ThetaDataRestApiClient"/>
+        /// </summary>
         public ThetaDataRestApiClient()
         {
             _restClient = new RestClient(RestApiBaseUrl);
         }
 
+        /// <summary>
+        /// Executes a REST request and deserializes the response content into an object.
+        /// </summary>
+        /// <typeparam name="T">The type of objects that implement the base response interface.</typeparam>
+        /// <param name="request">The REST request to execute.</param>
+        /// <returns>An enumerable collection of objects that implement the specified base response interface.</returns>
+        /// <exception cref="Exception">Thrown when an error occurs during the execution of the request or when the response is invalid.</exception>
         public IEnumerable<T?> ExecuteRequest<T>(RestRequest? request) where T : IBaseResponse
         {
             while (request != null)
