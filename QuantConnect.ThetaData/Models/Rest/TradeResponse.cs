@@ -32,7 +32,7 @@ public readonly struct TradeResponse
     /// <summary>
     /// The trade condition.
     /// </summary>
-    public byte Condition { get; }
+    public string Condition { get; }
 
     /// <summary>
     /// The amount of contracts traded.
@@ -63,7 +63,7 @@ public readonly struct TradeResponse
     /// <param name="exchange">The exchange where the trade was executed.</param>
     /// <param name="price">The price of the trade.</param>
     /// <param name="date">The date formatted as YYYYMMDD.</param>
-    public TradeResponse(uint timeMilliseconds, byte condition, decimal size, byte exchange, decimal price, string date)
+    public TradeResponse(uint timeMilliseconds, string condition, decimal size, byte exchange, decimal price, string date)
     {
         TimeMilliseconds = timeMilliseconds;
         Condition = condition;

@@ -135,18 +135,17 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             optionRequest.AddQueryParameter("strike", ticker[2]);
             optionRequest.AddQueryParameter("right", ticker[3]);
 
-            var period = resolution.ToTimeSpan();
-
             switch (tickType)
             {
                 case TickType.Trade when resolution == Resolution.Daily:
                     optionRequest.Resource = "/hist/option/eod";
-                    return GetOptionEndOfDay(optionRequest, symbol, (dateTime, eof) =>
-                    new TradeBar(dateTime, symbol, eof.Open, eof.High, eof.Low, eof.Close, eof.Volume, period));
+                    var period = resolution.ToTimeSpan();
+                    return GetOptionEndOfDay(optionRequest, symbol,
+                        (tradeDateTime, eof) => new TradeBar(tradeDateTime, symbol, eof.Open, eof.High, eof.Low, eof.Close, eof.Volume, period));
                 case TickType.Quote when resolution == Resolution.Daily:
                     optionRequest.Resource = "/hist/option/eod";
-                    return GetOptionEndOfDay(optionRequest, symbol, (dateTime, eof) =>
-                    new Tick(dateTime, symbol, ThetaDataExtensions.QuoteConditions[eof.AskCondition], string.Empty, eof.BidSize, eof.BidPrice, eof.AskSize, eof.AskPrice));
+                    return GetOptionEndOfDay(optionRequest, symbol,
+                        (quoteDateTime, eof) => new Tick(quoteDateTime, symbol, eof.AskCondition, ThetaDataExtensions.Exchanges[eof.AskExchange], eof.BidSize, eof.BidPrice, eof.AskSize, eof.AskPrice));
                 case TickType.OpenInterest when resolution == Resolution.Daily:
                     optionRequest.Resource = "/hist/option/open_interest";
                     return GetHistoricalOpenInterestData(optionRequest, symbol);
@@ -189,7 +188,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 {
                     // ThetaData API: Eastern Time (ET) time zone.
                     var tradeDateTime = trade.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(trade.TimeMilliseconds);
-                    yield return new Tick(tradeDateTime, symbol, trade.Condition.ToStringInvariant(), string.Empty, trade.Size, trade.Price);
+                    yield return new Tick(tradeDateTime, symbol, trade.Condition.ToStringInvariant(), ThetaDataExtensions.Exchanges[trade.Exchange], trade.Size, trade.Price);
                 }
             }
         }
@@ -202,7 +201,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 {
                     // ThetaData API: Eastern Time (ET) time zone.
                     var quoteDateTime = quote.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(quote.TimeMilliseconds);
-                    yield return new Tick(quoteDateTime, symbol, ThetaDataExtensions.QuoteConditions[quote.AskCondition], string.Empty, quote.BidSize, quote.BidPrice, quote.AskSize, quote.AskPrice);
+                    yield return new Tick(quoteDateTime, symbol, quote.AskCondition, ThetaDataExtensions.Exchanges[quote.AskExchange], quote.BidSize, quote.BidPrice, quote.AskSize, quote.AskPrice);
                 }
             }
         }
@@ -214,7 +213,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 foreach (var endOfDay in endOfDays.Response)
                 {
                     var tradeDateTime = GetTickTime(symbol, endOfDay.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(endOfDay.LastTradeTimeMilliseconds));
-                    // Interlocked.Increment(ref _dataPointCount);
                     yield return res(tradeDateTime, endOfDay);
                 }
             }

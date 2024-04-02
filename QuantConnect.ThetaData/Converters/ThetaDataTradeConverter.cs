@@ -60,7 +60,7 @@ public class ThetaDataTradeConverter : JsonConverter<TradeResponse>
 
         return new TradeResponse(
             timeMilliseconds: token[0]!.Value<uint>(),
-            condition: token[6]!.Value<byte>(),
+            condition: token[6]!.Value<string>() ?? string.Empty,
             size: token[7]!.Value<decimal>(),
             exchange: token[8]!.Value<byte>(),
             price: token[9]!.Value<decimal>(),

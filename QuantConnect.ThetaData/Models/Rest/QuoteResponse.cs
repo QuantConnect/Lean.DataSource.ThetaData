@@ -47,7 +47,7 @@ public readonly struct QuoteResponse
     /// <summary>
     /// The last NBBO bid condition.
     /// </summary>
-    public byte BidCondition { get; }
+    public string BidCondition { get; }
 
     /// <summary>
     /// The last NBBO ask size.
@@ -67,7 +67,7 @@ public readonly struct QuoteResponse
     /// <summary>
     /// The last NBBO ask condition.
     /// </summary>
-    public byte AskCondition { get; }
+    public string AskCondition { get; }
 
     /// <summary>
     /// The date formatted as YYYYMMDD. (e.g. "20240328" -> 2024/03/28)
@@ -87,8 +87,8 @@ public readonly struct QuoteResponse
     /// <param name="askPrice">The last NBBO ask price.</param>
     /// <param name="askCondition">The last NBBO ask condition.</param>
     /// <param name="date">The date formatted as YYYYMMDD.</param>
-    public QuoteResponse(uint timeMilliseconds, decimal bidSize, byte bidExchange, decimal bidPrice, byte bidCondition,
-        decimal askSize, byte askExchange, decimal askPrice, byte askCondition, string date)
+    public QuoteResponse(uint timeMilliseconds, decimal bidSize, byte bidExchange, decimal bidPrice, string bidCondition,
+        decimal askSize, byte askExchange, decimal askPrice, string askCondition, string date)
     {
         TimeMilliseconds = timeMilliseconds;
         BidSize = bidSize;

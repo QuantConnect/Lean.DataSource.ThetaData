@@ -50,11 +50,11 @@ public class ThetaDataEndOfDayConverter : JsonConverter<EndOfDayReportResponse>
             bidSize: token[8]!.Value<decimal>(),
             bidExchange: token[9]!.Value<byte>(),
             bidPrice: token[10]!.Value<decimal>(),
-            bidCondition: token[11]!.Value<byte>(),
+            bidCondition: token[11]!.Value<string>() ?? string.Empty,
             askSize: token[12]!.Value<decimal>(),
             askExchange: token[13]!.Value<byte>(),
             askPrice: token[14]!.Value<decimal>(),
-            askCondition: token[15]!.Value<byte>(),
+            askCondition: token[15]!.Value<string>() ?? string.Empty,
             date: token[16]!.Value<string>() ?? string.Empty
             );
 

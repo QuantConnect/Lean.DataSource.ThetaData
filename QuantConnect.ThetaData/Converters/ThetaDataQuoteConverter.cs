@@ -66,11 +66,11 @@ public class ThetaDataQuoteConverter : JsonConverter<QuoteResponse>
             bidSize: token[1]!.Value<decimal>(),
             bidExchange: token[2]!.Value<byte>(),
             bidPrice: token[3]!.Value<decimal>(),
-            bidCondition: token[4]!.Value<byte>(),
+            bidCondition: token[4]!.Value<string>() ?? string.Empty,
             askSize: token[5]!.Value<decimal>(),
             askExchange: token[6]!.Value<byte>(),
             askPrice: token[7]!.Value<decimal>(),
-            askCondition: token[8]!.Value<byte>(),
+            askCondition: token[8]!.Value<string>() ?? string.Empty,
             date: token[9]!.Value<string>() ?? string.Empty);
     }
 }
