@@ -111,8 +111,8 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
             var restRequest = new RestRequest(Method.GET);
 
-            var startDate = GetTickTime(historyRequest.Symbol, historyRequest.StartTimeUtc).ConvertToThetaDataDateFormat();
-            var endDate = GetTickTime(historyRequest.Symbol, historyRequest.EndTimeUtc).ConvertToThetaDataDateFormat();
+            var startDate = historyRequest.StartTimeUtc.ConvertFromUtc(TimeZones.EasternStandard).ConvertToThetaDataDateFormat();
+            var endDate = historyRequest.EndTimeUtc.ConvertFromUtc(TimeZones.EasternStandard).ConvertToThetaDataDateFormat();
 
             restRequest.AddQueryParameter("start_date", startDate);
             restRequest.AddQueryParameter("end_date", endDate);
