@@ -73,6 +73,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
             var underlying = symbol.SecurityType.IsOption() ? symbol.Underlying : symbol;
             var optionsSecurityType = underlying.SecurityType == SecurityType.Index ? SecurityType.IndexOption : SecurityType.Option;
+            var optionStyle = optionsSecurityType.DefaultOptionStyle();
 
             var strikeRequest = new RestRequest("/list/strikes", Method.GET);
             strikeRequest.AddQueryParameter("root", underlying.Value);
@@ -85,16 +86,13 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                     continue;
                 }
 
-                if (expirationDate > new DateTime(2024, 05, 1))
-                    continue;
-
                 strikeRequest.AddOrUpdateParameter("exp", expirationDate.ConvertToThetaDataDateFormat());
 
                 foreach (var strike in _restApiClient.ExecuteRequest<BaseResponse<decimal>>(strikeRequest).SelectMany(strikes => strikes.Response))
                 {
                     foreach (var right in optionRights)
                     {
-                        yield return _symbolMapper.GetLeanSymbol(underlying.Value, optionsSecurityType, underlying.ID.Market, OptionStyle.American,
+                        yield return _symbolMapper.GetLeanSymbol(underlying.Value, optionsSecurityType, underlying.ID.Market, optionStyle,
                             expirationDate, strike, right, underlying);
                     }
                 }
