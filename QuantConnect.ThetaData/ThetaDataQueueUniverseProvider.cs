@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -31,7 +31,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         }
 
         /// <inheritdoc />
-        public IEnumerable<Symbol> LookupSymbols(Symbol symbol, bool _, string __)
+        public IEnumerable<Symbol> LookupSymbols(Symbol symbol, bool includeExpired, string? securityCurrency = null)
         {
             var utcNow = TimeProvider.GetUtcNow();
             var symbols = GetOptionChain(symbol, utcNow.Date);
