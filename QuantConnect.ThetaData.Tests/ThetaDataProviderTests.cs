@@ -134,7 +134,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
             var cancellationTokenSource = new CancellationTokenSource();
             var resetEvent = new AutoResetEvent(false);
             var underlyingSymbol = TestHelpers.CreateSymbol(ticker, securityType);
-            var configs = _thetaDataProvider.LookupSymbols(underlyingSymbol, false).SelectMany(x => GetSubscriptionTickDataConfigs(x)).Take(500);
+            var configs = _thetaDataProvider.LookupSymbols(underlyingSymbol, false).SelectMany(x => GetSubscriptionTickDataConfigs(x)).Take(500).ToList();
 
             var incomingSymbolDataByTickType = new ConcurrentDictionary<(Symbol, TickType), int>();
 
@@ -191,6 +191,8 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
 
             Assert.IsNotEmpty(symbolVolatilities);
             Assert.That(symbolVolatilities.Count, Is.GreaterThan(minReturnResponse));
+
+            cancellationTokenSource.Cancel();
         }
 
         private static IEnumerable<SubscriptionDataConfig> GetSubscriptionDataConfigs(string ticker, Resolution resolution, decimal strikePrice, DateTime expiry,
