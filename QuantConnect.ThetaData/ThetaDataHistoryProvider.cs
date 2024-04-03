@@ -167,7 +167,12 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 {
                     case TickType.Trade:
                         optionRequest.Resource = "/hist/option/trade";
-                        return GetHistoricalTrade(optionRequest, symbol, resolution, tickType);
+                        var tickTradeBars = GetHistoricalTickTradeData(optionRequest, symbol);
+                        if (resolution != Resolution.Tick)
+                        {
+                            return LeanData.AggregateTicksToTradeBars(tickTradeBars, symbol, resolution.ToTimeSpan());
+                        }
+                        return tickTradeBars;
                     case TickType.Quote:
                         optionRequest.AddQueryParameter("ivl", GetIntervalsInMilliseconds(resolution));
                         optionRequest.Resource = "/hist/option/quote";
@@ -176,37 +181,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                         throw new ArgumentException($"Invalid tick type: {tickType}.");
                 }
             }
-        }
-
-        private IEnumerable<BaseData> GetHistoricalTrade(RestRequest request, Symbol symbol, Resolution resolution, TickType tickType)
-        {
-            IDataConsolidator consolidator;
-            IEnumerable<BaseData> history;
-
-            consolidator = resolution != Resolution.Tick
-                ? new TickConsolidator(resolution.ToTimeSpan())
-                : FilteredIdentityDataConsolidator.ForTickType(tickType);
-            history = GetHistoricalTickTradeData(request, symbol);
-
-            BaseData? consolidatedData = null;
-            DataConsolidatedHandler onDataConsolidated = (s, e) =>
-            {
-                consolidatedData = (BaseData)e;
-            };
-            consolidator.DataConsolidated += onDataConsolidated;
-
-            foreach (var data in history)
-            {
-                consolidator.Update(data);
-                if (consolidatedData != null)
-                {
-                    yield return consolidatedData;
-                    consolidatedData = null;
-                }
-            }
-
-            consolidator.DataConsolidated -= onDataConsolidated;
-            consolidator.DisposeSafely();
         }
 
         private IEnumerable<BaseData> GetHistoricalOpenInterestData(RestRequest request, Symbol symbol)
@@ -222,7 +196,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             }
         }
 
-        private IEnumerable<BaseData> GetHistoricalTickTradeData(RestRequest request, Symbol symbol)
+        private IEnumerable<Tick> GetHistoricalTickTradeData(RestRequest request, Symbol symbol)
         {
             foreach (var trades in _restApiClient.ExecuteRequest<BaseResponse<TradeResponse>>(request))
             {
