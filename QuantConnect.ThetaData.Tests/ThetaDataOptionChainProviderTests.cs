@@ -20,6 +20,7 @@ using QuantConnect.Util;
 using QuantConnect.Tests;
 using QuantConnect.Securities;
 using System.Collections.Generic;
+using QuantConnect.Lean.DataSource.ThetaData.Models.SubscriptionPlans;
 
 namespace QuantConnect.Lean.DataSource.ThetaData.Tests
 {
@@ -31,7 +32,8 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
         [SetUp]
         public void SetUp()
         {
-            _thetaDataOptionChainProvider = new(new ThetaDataSymbolMapper(), new ThetaDataRestApiClient());
+            var userSubscription = new ProSubscriptionPlan();
+            _thetaDataOptionChainProvider = new(new ThetaDataSymbolMapper(), new ThetaDataRestApiClient(userSubscription.RateGate));
         }
 
         private static IEnumerable<Symbol> UnderlyingSymbols

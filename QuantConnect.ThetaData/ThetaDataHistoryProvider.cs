@@ -20,11 +20,11 @@ using QuantConnect.Util;
 using QuantConnect.Logging;
 using QuantConnect.Interfaces;
 using QuantConnect.Data.Market;
-using QuantConnect.Data.Consolidators;
 using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Lean.Engine.HistoricalData;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Common;
+using QuantConnect.Lean.DataSource.ThetaData.Models.Interfaces;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
 {
@@ -37,6 +37,16 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// Indicates whether the warning for invalid <see cref="SecurityType"/> has been fired.
         /// </summary>
         private volatile bool _invalidSecurityTypeWarningFired;
+
+        /// <summary>
+        /// Indicates whether the warning for invalid <see cref="ISubscriptionPlan.AccessibleResolutions"/> has been fired.
+        /// </summary>
+        private volatile bool _invalidSubscriptionResolutionRequestWarningFired;
+
+        /// <summary>
+        /// Indicates whether the warning indicating that the requested date is greater than the <see cref="ISubscriptionPlan.FirstAccessDate"/> has been triggered.
+        /// </summary>
+        private volatile bool _invalidStartDateInCurrentSubscriptionWarningFired;
 
         /// <summary>
         /// Indicates whether a warning for an invalid start time has been fired, where the start time is greater than or equal to the end time in UTC.
@@ -81,6 +91,25 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
         public IEnumerable<BaseData>? GetHistory(HistoryRequest historyRequest)
         {
+            if (!_userSubscriptionPlan.AccessibleResolutions.Contains(historyRequest.Resolution))
+            {
+                if (!_invalidSubscriptionResolutionRequestWarningFired)
+                {
+                    _invalidSubscriptionResolutionRequestWarningFired = true;
+                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: The current user's subscription plan does not support the requested resolution: {historyRequest.Resolution}");
+                }
+                return null;
+            }
+
+            if (_userSubscriptionPlan.FirstAccessDate.Date > historyRequest.StartTimeUtc.Date)
+            {
+                if (!_invalidStartDateInCurrentSubscriptionWarningFired)
+                {
+                    _invalidStartDateInCurrentSubscriptionWarningFired = true;
+                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: The requested start time ({historyRequest.StartTimeUtc.Date}) exceeds the maximum available date ({_userSubscriptionPlan.FirstAccessDate.Date}) allowed by the user's subscription.");
+                }
+            }
+
             if (!CanSubscribe(historyRequest.Symbol))
             {
                 if (!_invalidSecurityTypeWarningFired)

@@ -30,6 +30,8 @@ using System.Security.Cryptography;
 using System.Net.NetworkInformation;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Enums;
 using QuantConnect.Lean.DataSource.ThetaData.Models.WebSocket;
+using QuantConnect.Lean.DataSource.ThetaData.Models.Interfaces;
+using QuantConnect.Lean.DataSource.ThetaData.Models.SubscriptionPlans;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
 {
@@ -69,6 +71,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         private object _lock = new object();
 
         /// <summary>
+        /// Represents the subscription plan assigned to the user.
+        /// </summary>
+        private ISubscriptionPlan _userSubscriptionPlan;
+
+        /// <summary>
         /// The time provider instance. Used for improved testability
         /// </summary>
         protected virtual ITimeProvider TimeProvider { get; } = RealTimeProvider.Instance;
@@ -88,12 +95,14 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                     Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(Config.Get("data-aggregator", "QuantConnect.Lean.Engine.DataFeeds.AggregationManager"), forceTypeNameOnExisting: false);
             }
 
-            _restApiClient = new ThetaDataRestApiClient();
+            _userSubscriptionPlan = GetUserSubscriptionPlan();
+
+            _restApiClient = new ThetaDataRestApiClient(_userSubscriptionPlan.RateGate!);
             _symbolMapper = new ThetaDataSymbolMapper();
 
             _optionChainProvider = new ThetaDataOptionChainProvider(_symbolMapper, _restApiClient);
 
-            _webSocketClient = new ThetaDataWebSocketClientWrapper(_symbolMapper, OnMessage);
+            _webSocketClient = new ThetaDataWebSocketClientWrapper(_symbolMapper, _userSubscriptionPlan.MaxStreamingContracts, OnMessage);
             _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
             _subscriptionManager.SubscribeImpl += (symbols, _) => _webSocketClient.Subscribe(symbols);
             _subscriptionManager.UnsubscribeImpl += (symbols, _) => _webSocketClient.Unsubscribe(symbols);
@@ -109,7 +118,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <inheritdoc />
         public IEnumerator<BaseData>? Subscribe(SubscriptionDataConfig dataConfig, EventHandler newDataAvailableHandler)
         {
-            if (!CanSubscribe(dataConfig.Symbol))
+            if (!CanSubscribe(dataConfig.Symbol) || _userSubscriptionPlan.MaxStreamingContracts != 0)
             {
                 return null;
             }
@@ -199,6 +208,34 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 symbol.Value.IndexOfInvariant("universe", true) == -1 &&
                 !symbol.IsCanonical() &&
                 symbol.SecurityType == SecurityType.Option || symbol.SecurityType == SecurityType.IndexOption;
+        }
+
+        /// <summary>
+        /// Retrieves the subscription plan associated with the current user.
+        /// </summary>
+        /// <returns>
+        /// An instance of the <see cref="ISubscriptionPlan"/> interface representing the subscription plan of the user.
+        /// </returns>
+        private ISubscriptionPlan GetUserSubscriptionPlan()
+        {
+            if (!Config.TryGetValue<string>("thetadata-subscription-plan", out var pricePlan) || string.IsNullOrEmpty(pricePlan))
+            {
+                pricePlan = "Free";
+            }
+
+            if (!Enum.TryParse<SubscriptionPlanType>(pricePlan, out var parsedPricePlan) || !Enum.IsDefined(typeof(SubscriptionPlanType), parsedPricePlan))
+            {
+                throw new ArgumentException($"An error occurred while parsing the price plan '{pricePlan}'. Please ensure that the provided price plan is valid and supported by the system.");
+            }
+
+            return parsedPricePlan switch
+            {
+                SubscriptionPlanType.Free => new FreeSubscriptionPlan(),
+                SubscriptionPlanType.Value => new ValueSubscriptionPlan(),
+                SubscriptionPlanType.Standard => new StandardSubscriptionPlan(),
+                SubscriptionPlanType.Pro => new ProSubscriptionPlan(),
+                _ => throw new ArgumentException($"{nameof(ThetaDataProvider)}.{nameof(GetUserSubscriptionPlan)}: Invalid subscription plan type.")
+            };
         }
 
         private class ModulesReadLicenseRead : Api.RestResponse

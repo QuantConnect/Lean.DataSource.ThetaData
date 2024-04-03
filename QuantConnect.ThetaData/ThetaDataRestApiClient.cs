@@ -15,6 +15,7 @@
 
 using RestSharp;
 using Newtonsoft.Json;
+using QuantConnect.Util;
 using QuantConnect.Logging;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Interfaces;
 
@@ -36,11 +37,18 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         private readonly RestClient _restClient;
 
         /// <summary>
+        /// Represents a RateGate instance used to control the rate of certain operations.
+        /// </summary>
+        private readonly RateGate? _rateGate;
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="ThetaDataRestApiClient"/>
         /// </summary>
-        public ThetaDataRestApiClient()
+        /// <param name="subscriptionPlan">User's ThetaData subscription price plan.</param>
+        public ThetaDataRestApiClient(RateGate rateGate)
         {
             _restClient = new RestClient(RestApiBaseUrl);
+            _rateGate = rateGate;
         }
 
         /// <summary>
@@ -55,6 +63,8 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             while (request != null)
             {
                 Log.Debug($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: URI: {_restClient.BuildUri(request)}");
+
+                _rateGate?.WaitToProceed();
 
                 var response = _restClient.Execute(request);
 
