@@ -65,11 +65,10 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
             Assert.That(optionChain.Select(x => x.Underlying), Is.All.EqualTo(underlying));
         }
 
-        [TestCase(Futures.Indices.SP500EMini, "2024/06/21")]
-        public void GetFutureOptionContractListShouldReturnNothing(string ticker, DateTime expiryDate)
+        [TestCase(Futures.Indices.SP500EMini, OptionRight.Call, 100, "2024/06/21")]
+        public void GetFutureOptionContractListShouldReturnNothing(string ticker, OptionRight optionRight, decimal strikePrice, DateTime expiryDate)
         {
-            var underlying = Symbols.CreateFutureSymbol(ticker, expiryDate);
-            var symbol = Symbols.CreateFutureOptionSymbol(underlying, OptionRight.Call, 100, expiryDate);
+            var symbol = TestHelpers.CreateSymbol(ticker, SecurityType.FutureOption, optionRight, strikePrice, expiryDate);
 
             var optionChain = _thetaDataOptionChainProvider.GetOptionContractList(symbol, expiryDate).ToList();
 

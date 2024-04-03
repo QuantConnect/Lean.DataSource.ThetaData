@@ -19,6 +19,7 @@ using System.Linq;
 using NUnit.Framework;
 using QuantConnect.Data;
 using QuantConnect.Util;
+using QuantConnect.Tests;
 using Microsoft.CodeAnalysis;
 using QuantConnect.Securities;
 using QuantConnect.Data.Market;
@@ -153,6 +154,9 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
                 case SecurityType.IndexOption:
                     var underlyingIndexSymbol = Symbol.Create(ticker, SecurityType.Index, market);
                     return Symbol.CreateOption(underlyingIndexSymbol, market, OptionStyle.American, optionRight.Value, strikePrice.Value, expirationDate.Value);
+                case SecurityType.FutureOption:
+                    var underlyingFuture = Symbols.CreateFutureSymbol(ticker, expirationDate.Value);
+                    return Symbols.CreateFutureOptionSymbol(underlyingFuture, optionRight.Value, strikePrice.Value, expirationDate.Value);
                 default:
                     throw new NotSupportedException($"The security type '{securityType}' is not supported.");
             }
