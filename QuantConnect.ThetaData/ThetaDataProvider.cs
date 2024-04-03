@@ -118,7 +118,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <inheritdoc />
         public IEnumerator<BaseData>? Subscribe(SubscriptionDataConfig dataConfig, EventHandler newDataAvailableHandler)
         {
-            if (!CanSubscribe(dataConfig.Symbol) || _userSubscriptionPlan.MaxStreamingContracts != 0)
+            if (!CanSubscribe(dataConfig.Symbol) || _userSubscriptionPlan.MaxStreamingContracts == 0)
             {
                 return null;
             }
