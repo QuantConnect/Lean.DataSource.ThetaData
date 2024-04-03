@@ -15,6 +15,7 @@
 
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System.Globalization;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
 
 namespace QuantConnect.Lean.DataSource.ThetaData.Converters;
@@ -71,6 +72,6 @@ public class ThetaDataQuoteConverter : JsonConverter<QuoteResponse>
             askExchange: token[6]!.Value<byte>(),
             askPrice: token[7]!.Value<decimal>(),
             askCondition: token[8]!.Value<string>() ?? string.Empty,
-            date: token[9]!.Value<string>() ?? string.Empty);
+            date: DateTime.ParseExact(token[9]!.ToString(), "yyyyMMdd", CultureInfo.InvariantCulture));
     }
 }

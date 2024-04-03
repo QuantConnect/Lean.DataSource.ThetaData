@@ -37,7 +37,15 @@ public readonly struct OpenInterestResponse
     /// <summary>
     /// Gets the date of the open interest data in the format YYYYMMDD. For example, "20240328" represents March 28, 2024.
     /// </summary>
-    public string Date { get; }
+    public DateTime Date { get; }
+
+    /// <summary>
+    /// Gets the DateTime representation of the last Open Interest time. DateTime is New York Time (EST) Time Zone!
+    /// </summary>
+    /// <remarks>
+    /// This property calculates the <see cref="Date"/> by adding the <seealso cref="TimeMilliseconds"/> to the Date property.
+    /// </remarks>
+    public DateTime DateTimeMilliseconds { get => Date.AddMilliseconds(TimeMilliseconds); }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="OpenInterestResponse"/> struct with the specified time, open interest, and date.
@@ -45,7 +53,7 @@ public readonly struct OpenInterestResponse
     /// <param name="timeMilliseconds">The time in milliseconds since midnight Eastern Time (ET).</param>
     /// <param name="openInterest">The total amount of outstanding contracts.</param>
     /// <param name="date">The date of the data in the format YYYYMMDD.</param>
-    public OpenInterestResponse(uint timeMilliseconds, decimal openInterest, string date)
+    public OpenInterestResponse(uint timeMilliseconds, decimal openInterest, DateTime date)
     {
         TimeMilliseconds = timeMilliseconds;
         OpenInterest = openInterest;

@@ -52,7 +52,15 @@ public readonly struct TradeResponse
     /// <summary>
     /// The date formatted as YYYYMMDD. (e.g. "20240328" -> 2024/03/28)
     /// </summary>
-    public string Date { get; }
+    public DateTime Date { get; }
+
+    /// <summary>
+    /// Gets the DateTime representation of the last trade time. DateTime is New York Time (EST) Time Zone!
+    /// </summary>
+    /// <remarks>
+    /// This property calculates the <see cref="Date"/> by adding the <seealso cref="TimeMilliseconds"/> to the Date property.
+    /// </remarks>
+    public DateTime DateTimeMilliseconds { get => Date.AddMilliseconds(TimeMilliseconds); }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TradeResponse"/> struct with the specified parameters.
@@ -63,7 +71,7 @@ public readonly struct TradeResponse
     /// <param name="exchange">The exchange where the trade was executed.</param>
     /// <param name="price">The price of the trade.</param>
     /// <param name="date">The date formatted as YYYYMMDD.</param>
-    public TradeResponse(uint timeMilliseconds, string condition, decimal size, byte exchange, decimal price, string date)
+    public TradeResponse(uint timeMilliseconds, string condition, decimal size, byte exchange, decimal price, DateTime date)
     {
         TimeMilliseconds = timeMilliseconds;
         Condition = condition;

@@ -14,13 +14,14 @@
 */
 
 using Newtonsoft.Json;
+using QuantConnect.Util;
 
 namespace QuantConnect.Lean.DataSource.ThetaData.Models.WebSocket;
 
 public readonly struct WebSocketTrade
 {
     [JsonProperty("ms_of_day")]
-    public int DayTimeMilliseconds { get; }
+    public int TimeMilliseconds { get; }
 
     [JsonProperty("sequence")]
     public int Sequence { get; }
@@ -38,12 +39,21 @@ public readonly struct WebSocketTrade
     public byte Exchange { get; }
 
     [JsonProperty("date")]
-    public string Date { get; }
+    [JsonConverter((typeof(DateTimeJsonConverter)), DateFormat.EightCharacter)]
+    public DateTime Date { get; }
+
+    /// <summary>
+    /// Gets the DateTime representation of the last trade time. DateTime is New York Time (EST) Time Zone!
+    /// </summary>
+    /// <remarks>
+    /// This property calculates the <see cref="Date"/> by adding the <seealso cref="TimeMilliseconds"/> to the Date property.
+    /// </remarks>
+    public DateTime DateTimeMilliseconds { get => Date.AddMilliseconds(TimeMilliseconds); }
 
     [JsonConstructor]
-    public WebSocketTrade(int dayTimeMilliseconds, int sequence, int size, int condition, decimal price, byte exchange, string date)
+    public WebSocketTrade(int dayTimeMilliseconds, int sequence, int size, int condition, decimal price, byte exchange, DateTime date)
     {
-        DayTimeMilliseconds = dayTimeMilliseconds;
+        TimeMilliseconds = dayTimeMilliseconds;
         Sequence = sequence;
         Size = size;
         Condition = condition;

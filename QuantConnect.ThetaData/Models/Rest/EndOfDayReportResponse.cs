@@ -24,73 +24,61 @@ public readonly struct EndOfDayReportResponse
     /// <summary>
     /// Represents the time of day the report was generated
     /// </summary>
-    //[JsonProperty("ms_of_day")]
     public uint ReportGeneratedTimeMilliseconds { get; }
 
     /// <summary>
     /// Represents the time of the last trade
     /// </summary>
-    //[JsonProperty("ms_of_day2")]
     public uint LastTradeTimeMilliseconds { get; }
 
     /// <summary>
     /// The opening trade price.
     /// </summary>
-    //[JsonProperty("open")]
     public decimal Open { get; }
 
     /// <summary>
     /// The highest traded price.
     /// </summary>
-    //[JsonProperty("high")]
     public decimal High { get; }
 
     /// <summary>
     /// The lowest traded price.
     /// </summary>
-    //[JsonProperty("low")]
     public decimal Low { get; }
 
     /// <summary>
     /// The closing traded price.
     /// </summary>
-    //[JsonProperty("close")]
     public decimal Close { get; }
 
     /// <summary>
     /// The amount of contracts traded.
     /// </summary>
-    //[JsonProperty("volume")]
     public decimal Volume { get; }
 
     /// <summary>
     /// The amount of trades.
     /// </summary>
-    //[JsonProperty("count")]
     public uint AmountTrades { get; }
 
     /// <summary>
     /// The last NBBO bid size.
     /// </summary>
-    //[JsonProperty("bid_size")]
     public decimal BidSize { get; }
 
     /// <summary>
     /// The last NBBO bid exchange.
     /// </summary>
-    //[JsonProperty("bid_exchange")]
     public byte BidExchange { get; }
 
     /// <summary>
     /// The last NBBO bid price.
     /// </summary>
-    //[JsonProperty("bid")]
     public decimal BidPrice { get; }
 
     /// <summary>
     /// The last NBBO bid condition.
     /// </summary>
-    //[JsonProperty("bid_condition")]
     public string BidCondition { get; }
 
     /// <summary>
@@ -102,31 +90,35 @@ public readonly struct EndOfDayReportResponse
     /// <summary>
     /// The last NBBO ask exchange.
     /// </summary>
-    //[JsonProperty("ask_exchange")]
     public byte AskExchange { get; }
 
     /// <summary>
     /// The last NBBO ask price.
     /// </summary>
-    //[JsonProperty("ask")]
     public decimal AskPrice { get; }
 
     /// <summary>
     /// The last NBBO ask condition.
     /// </summary>
-    //[JsonProperty("ask_condition")]
     public string AskCondition { get; }
 
     /// <summary>
     /// The date formated as YYYYMMDD.
     /// </summary>
-    //[JsonProperty("date")]
-    public string Date { get; }
+    public DateTime Date { get; }
+
+    /// <summary>
+    /// Gets the DateTime representation of the last trade time in milliseconds. DateTime is New York Time (EST) Time Zone!
+    /// </summary>
+    /// <remarks>
+    /// This property calculates the <see cref="Date"/> by adding the <seealso cref="LastTradeTimeMilliseconds"/> to the Date property.
+    /// </remarks>
+    public DateTime LastTradeDateTimeMilliseconds { get => Date.AddMilliseconds(LastTradeTimeMilliseconds); }
 
     //[JsonConstructor]
     public EndOfDayReportResponse(uint reportGeneratedTimeMilliseconds, uint lastTradeTimeMilliseconds, decimal open, decimal high, decimal low, decimal close,
         decimal volume, uint amountTrades, decimal bidSize, byte bidExchange, decimal bidPrice, string bidCondition, decimal askSize, byte askExchange,
-        decimal askPrice, string askCondition, string date)
+        decimal askPrice, string askCondition, DateTime date)
     {
         ReportGeneratedTimeMilliseconds = reportGeneratedTimeMilliseconds;
         LastTradeTimeMilliseconds = lastTradeTimeMilliseconds;

@@ -15,6 +15,7 @@
 
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System.Globalization;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
 
 namespace QuantConnect.Lean.DataSource.ThetaData.Converters;
@@ -50,7 +51,7 @@ public class ThetaDataOpenInterestConverter : JsonConverter<OpenInterestResponse
         return new OpenInterestResponse(
             timeMilliseconds: token[0]!.Value<uint>(),
             openInterest: token[1]!.Value<decimal>(),
-            date: token[2]!.Value<string>() ?? string.Empty
+            date: DateTime.ParseExact(token[2]!.ToString(), "yyyyMMdd", CultureInfo.InvariantCulture)
             );
     }
 

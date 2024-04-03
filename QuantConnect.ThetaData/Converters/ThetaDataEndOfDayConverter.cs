@@ -15,6 +15,7 @@
 
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using System.Globalization;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
 
 namespace QuantConnect.Lean.DataSource.ThetaData.Converters;
@@ -55,7 +56,7 @@ public class ThetaDataEndOfDayConverter : JsonConverter<EndOfDayReportResponse>
             askExchange: token[13]!.Value<byte>(),
             askPrice: token[14]!.Value<decimal>(),
             askCondition: token[15]!.Value<string>() ?? string.Empty,
-            date: token[16]!.Value<string>() ?? string.Empty
+            date: DateTime.ParseExact(token[16]!.ToString(), "yyyyMMdd", CultureInfo.InvariantCulture)
             );
 
         return existingValue;

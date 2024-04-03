@@ -218,9 +218,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             {
                 foreach (var openInterest in openInterests.Response)
                 {
-                    // ThetaData API: Eastern Time (ET) time zone.
-                    var openInterestDateTime = openInterest.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(openInterest.TimeMilliseconds);
-                    yield return new OpenInterest(openInterestDateTime, symbol, openInterest.OpenInterest);
+                    yield return new OpenInterest(openInterest.DateTimeMilliseconds, symbol, openInterest.OpenInterest);
                 }
             }
         }
@@ -231,9 +229,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             {
                 foreach (var trade in trades.Response)
                 {
-                    // ThetaData API: Eastern Time (ET) time zone.
-                    var tradeDateTime = trade.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(trade.TimeMilliseconds);
-                    yield return new Tick(tradeDateTime, symbol, trade.Condition.ToStringInvariant(), ThetaDataExtensions.Exchanges[trade.Exchange], trade.Size, trade.Price);
+                    yield return new Tick(trade.DateTimeMilliseconds, symbol, trade.Condition.ToStringInvariant(), ThetaDataExtensions.Exchanges[trade.Exchange], trade.Size, trade.Price);
                 }
             }
         }
@@ -250,9 +246,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                         continue;
                     }
 
-                    // ThetaData API: Eastern Time (ET) time zone.
-                    var quoteDateTime = quote.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(quote.TimeMilliseconds);
-                    yield return new Tick(quoteDateTime, symbol, quote.AskCondition, ThetaDataExtensions.Exchanges[quote.AskExchange], quote.BidSize, quote.BidPrice, quote.AskSize, quote.AskPrice);
+                    yield return new Tick(quote.DateTimeMilliseconds, symbol, quote.AskCondition, ThetaDataExtensions.Exchanges[quote.AskExchange], quote.BidSize, quote.BidPrice, quote.AskSize, quote.AskPrice);
                 }
             }
         }
@@ -267,10 +261,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                     {
                         continue;
                     }
-
-                    // ThetaData API: Eastern Time (ET) time zone.
-                    var tradeDateTime = endOfDay.Date.ConvertFromThetaDataDateFormat().AddMilliseconds(endOfDay.LastTradeTimeMilliseconds);
-                    yield return res(tradeDateTime, endOfDay);
+                    yield return res(endOfDay.LastTradeDateTimeMilliseconds, endOfDay);
                 }
             }
         }

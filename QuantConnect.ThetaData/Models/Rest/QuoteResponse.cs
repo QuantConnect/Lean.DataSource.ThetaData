@@ -72,7 +72,15 @@ public readonly struct QuoteResponse
     /// <summary>
     /// The date formatted as YYYYMMDD. (e.g. "20240328" -> 2024/03/28)
     /// </summary>
-    public string Date { get; }
+    public DateTime Date { get; }
+
+    /// <summary>
+    /// Gets the DateTime representation of the last quote time. DateTime is New York Time (EST) Time Zone!
+    /// </summary>
+    /// <remarks>
+    /// This property calculates the <see cref="Date"/> by adding the <seealso cref="TimeMilliseconds"/> to the Date property.
+    /// </remarks>
+    public DateTime DateTimeMilliseconds { get => Date.AddMilliseconds(TimeMilliseconds); }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="QuoteResponse"/> struct.
@@ -88,7 +96,7 @@ public readonly struct QuoteResponse
     /// <param name="askCondition">The last NBBO ask condition.</param>
     /// <param name="date">The date formatted as YYYYMMDD.</param>
     public QuoteResponse(uint timeMilliseconds, decimal bidSize, byte bidExchange, decimal bidPrice, string bidCondition,
-        decimal askSize, byte askExchange, decimal askPrice, string askCondition, string date)
+        decimal askSize, byte askExchange, decimal askPrice, string askCondition, DateTime date)
     {
         TimeMilliseconds = timeMilliseconds;
         BidSize = bidSize;

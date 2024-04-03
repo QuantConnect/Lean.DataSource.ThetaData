@@ -14,13 +14,14 @@
 */
 
 using Newtonsoft.Json;
+using QuantConnect.Util;
 
 namespace QuantConnect.Lean.DataSource.ThetaData.Models.WebSocket;
 
 public readonly struct WebSocketQuote
 {
     [JsonProperty("ms_of_day")]
-    public int DayTimeMilliseconds { get; }
+    public int TimeMilliseconds { get; }
 
     [JsonProperty("bid_size")]
     public int BidSize { get; }
@@ -47,14 +48,23 @@ public readonly struct WebSocketQuote
     public int AskCondition { get; }
 
     [JsonProperty("date")]
-    public string Date { get; }
+    [JsonConverter((typeof(DateTimeJsonConverter)), DateFormat.EightCharacter)]
+    public DateTime Date { get; }
+
+    /// <summary>
+    /// Gets the DateTime representation of the last quote time. DateTime is New York Time (EST) Time Zone!
+    /// </summary>
+    /// <remarks>
+    /// This property calculates the <see cref="Date"/> by adding the <seealso cref="TimeMilliseconds"/> to the Date property.
+    /// </remarks>
+    public DateTime DateTimeMilliseconds { get => Date.AddMilliseconds(TimeMilliseconds); }
 
     [JsonConstructor]
     public WebSocketQuote(
         int dayTimeMilliseconds,
-        int bidSize, byte bidExchange, decimal bidPrice, int bidCondition, int askSize, byte askExchange, decimal askPrice, int askCondition, string date)
+        int bidSize, byte bidExchange, decimal bidPrice, int bidCondition, int askSize, byte askExchange, decimal askPrice, int askCondition, DateTime date)
     {
-        DayTimeMilliseconds = dayTimeMilliseconds;
+        TimeMilliseconds = dayTimeMilliseconds;
         BidSize = bidSize;
         BidExchange = bidExchange;
         BidPrice = bidPrice;
