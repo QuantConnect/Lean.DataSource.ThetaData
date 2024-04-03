@@ -14,8 +14,6 @@
 */
 
 using QuantConnect.Interfaces;
-using QuantConnect.Lean.DataSource.ThetaData.Models.Common;
-using RestSharp;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
 {
@@ -33,34 +31,20 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         }
 
         /// <inheritdoc />
-        public IEnumerable<Symbol> LookupSymbols(Symbol symbol, bool includeExpired, string? securityCurrency = null)
+        public IEnumerable<Symbol> LookupSymbols(Symbol symbol, bool _, string __)
         {
             var utcNow = TimeProvider.GetUtcNow();
             var symbols = GetOptionChain(symbol, utcNow.Date);
 
-            if (!includeExpired)
+            foreach (var optionSymbol in symbols)
             {
-                foreach (var optionSymbol in symbols)
-                {
-                    if (optionSymbol.ID.Date < GetTickTime(optionSymbol, utcNow).Date)
-                    {
-                        continue;
-                    }
-
-                    yield return optionSymbol;
-                }
-            }
-            else
-            {
-                foreach (var optionSymbol in symbols)
-                {
-                    yield return optionSymbol;
-                }
+                yield return optionSymbol;
             }
         }
 
         /// <summary>
         /// Retrieves a collection of option contracts for a given security symbol and requested date.
+        /// We have returned option contracts from <paramref name="requestedDate"/> to a future date, excluding expired contracts.
         /// </summary>
         /// <param name="symbol">The unique security identifier for which option contracts are to be retrieved.</param>
         /// <param name="requestedDate">The date from which to find option contracts.</param>

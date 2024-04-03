@@ -45,16 +45,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         private readonly ThetaDataSymbolMapper _symbolMapper;
 
         /// <summary>
-        /// Manages and provides access to exchange trading hours information.
-        /// </summary>
-        private readonly MarketHoursDatabase _marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
-
-        /// <summary>
-        /// A dictionary that maps symbols to their respective time zones based on the exchange they belong to.
-        /// </summary>
-        private readonly Dictionary<Symbol, DateTimeZone> _symbolExchangeTimeZones = new();
-
-        /// <summary>
         /// Helper class is doing to subscribe / unsubscribe process.
         /// </summary>
         private readonly EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
@@ -190,30 +180,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             {
                 _dataAggregator.Update(tick);
             }
-        }
-
-        /// <summary>
-        /// Converts the given UTC time into the symbol security exchange time zone
-        /// </summary>
-        private DateTime GetTickTime(Symbol symbol, DateTime utcTime)
-        {
-            if (!_symbolExchangeTimeZones.TryGetValue(symbol, out var exchangeTimeZone))
-            {
-                // read the exchange time zone from market-hours-database
-                if (_marketHoursDatabase.TryGetEntry(symbol.ID.Market, symbol, symbol.SecurityType, out var entry))
-                {
-                    exchangeTimeZone = entry.ExchangeHours.TimeZone;
-                }
-                // If there is no entry for the given Symbol, default to New York
-                else
-                {
-                    exchangeTimeZone = TimeZones.NewYork;
-                }
-
-                _symbolExchangeTimeZones.Add(symbol, exchangeTimeZone);
-            }
-
-            return utcTime.ConvertFromUtc(exchangeTimeZone);
         }
 
         /// <summary>
