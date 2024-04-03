@@ -18,6 +18,7 @@ using System.Linq;
 using NUnit.Framework;
 using QuantConnect.Util;
 using QuantConnect.Tests;
+using QuantConnect.Securities;
 using System.Collections.Generic;
 
 namespace QuantConnect.Lean.DataSource.ThetaData.Tests
@@ -38,7 +39,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
             get
             {
                 TestGlobals.Initialize();
-
                 yield return Symbol.Create("XEO", SecurityType.Index, Market.USA);
                 yield return Symbol.Create("DJX", SecurityType.Index, Market.USA);
             }
@@ -47,8 +47,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
         [TestCaseSource(nameof(UnderlyingSymbols))]
         public void GetOptionContractList(Symbol symbol)
         {
-            TestGlobals.Initialize();
-
             var referenceDate = new DateTime(2024, 03, 28);
             var optionChain = _thetaDataOptionChainProvider.GetOptionContractList(symbol, referenceDate).ToList();
 
@@ -65,6 +63,17 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
             // All contracts have the same underlying
             var underlying = symbol.Underlying ?? symbol;
             Assert.That(optionChain.Select(x => x.Underlying), Is.All.EqualTo(underlying));
+        }
+
+        [TestCase(Futures.Indices.SP500EMini, "2024/06/21")]
+        public void GetFutureOptionContractListShouldReturnNothing(string ticker, DateTime expiryDate)
+        {
+            var underlying = Symbols.CreateFutureSymbol(ticker, expiryDate);
+            var symbol = Symbols.CreateFutureOptionSymbol(underlying, OptionRight.Call, 100, expiryDate);
+
+            var optionChain = _thetaDataOptionChainProvider.GetOptionContractList(symbol, expiryDate).ToList();
+
+            Assert.IsEmpty(optionChain);
         }
     }
 }

@@ -60,8 +60,8 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <inheritdoc />
         public IEnumerable<Symbol> GetOptionContractList(Symbol symbol, DateTime date)
         {
-            // Only equity and index options are supported
-            if (symbol.SecurityType == SecurityType.Future || symbol.SecurityType == SecurityType.FutureOption)
+            if ((symbol.SecurityType.IsOption() && symbol.SecurityType == SecurityType.FutureOption) ||
+                (symbol.HasUnderlying && symbol.Underlying.SecurityType != SecurityType.Equity && symbol.Underlying.SecurityType != SecurityType.Index))
             {
                 if (!_unsupportedSecurityTypeWarningFired)
                 {
