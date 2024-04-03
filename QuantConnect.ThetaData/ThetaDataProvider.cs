@@ -13,17 +13,14 @@
  * limitations under the License.
 */
 
-using NodaTime;
 using Newtonsoft.Json;
 using QuantConnect.Data;
 using QuantConnect.Util;
 using QuantConnect.Packets;
 using QuantConnect.Logging;
-using QuantConnect.Securities;
 using QuantConnect.Interfaces;
 using QuantConnect.Data.Market;
 using QuantConnect.Configuration;
-using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Enums;
 using QuantConnect.Lean.DataSource.ThetaData.Models.WebSocket;
 
@@ -87,7 +84,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             _restApiClient = new ThetaDataRestApiClient();
             _symbolMapper = new ThetaDataSymbolMapper();
 
-            _optionChainProvider = new CachingOptionChainProvider(new ThetaDataOptionChainProvider(_symbolMapper, _restApiClient));
+            _optionChainProvider = new ThetaDataOptionChainProvider(_symbolMapper, _restApiClient);
 
             _webSocketClient = new ThetaDataWebSocketClientWrapper(_symbolMapper, OnMessage);
             _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
