@@ -14,7 +14,7 @@
 */
 
 using Newtonsoft.Json;
-using QuantConnect.Util;
+using QuantConnect.Lean.DataSource.ThetaData.Converters;
 
 namespace QuantConnect.Lean.DataSource.ThetaData.Models.WebSocket;
 
@@ -39,7 +39,7 @@ public readonly struct WebSocketTrade
     public byte Exchange { get; }
 
     [JsonProperty("date")]
-    [JsonConverter((typeof(DateTimeJsonConverter)), DateFormat.EightCharacter)]
+    [JsonConverter(typeof(DateTimeIntJsonConverter))]
     public DateTime Date { get; }
 
     /// <summary>

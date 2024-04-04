@@ -73,7 +73,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
             Assert.IsFalse(isNotSubscribed.Contains(true), "One of config is subscribed successfully.");
         }
 
-        [TestCase("AAPL", Resolution.Second, 172.5, "2024/03/28")]
+        [TestCase("AAPL", Resolution.Second, 170, "2024/04/19")]
         [TestCase("NVDA", Resolution.Second, 890, "2024/04/12")]
         public void CanSubscribeAndUnsubscribeOnSecondResolution(string ticker, Resolution resolution, decimal strikePrice, DateTime expiryDate)
         {
