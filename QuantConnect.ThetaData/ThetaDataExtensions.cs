@@ -24,14 +24,14 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// </summary>
         /// <param name="date">The date string in Theta data format (e.g., "20240303" for March 3, 2024).</param>
         /// <returns>The equivalent DateTime object.</returns>
-        public static DateTime ConvertFromThetaDataDateFormat(this string date) => DateTime.ParseExact(date, "yyyyMMdd", CultureInfo.InvariantCulture);
+        public static DateTime ConvertFromThetaDataDateFormat(this string date) => DateTime.ParseExact(date, DateFormat.EightCharacter, CultureInfo.InvariantCulture);
 
         /// <summary>
         /// Converts a DateTime object to Theta data format (yyyyMMdd) to a string.
         /// </summary>
         /// <param name="date">The DateTime object (e.g., new DateTime(2024, 03, 03))</param>
         /// <returns>The equivalent Theta Date string date.</returns>
-        public static string ConvertToThetaDataDateFormat(this DateTime date) => date.ToStringInvariant("yyyyMMdd");
+        public static string ConvertToThetaDataDateFormat(this DateTime date) => date.ToStringInvariant(DateFormat.EightCharacter);
 
         /// <summary>
         /// Represents a collection of Exchanges with their corresponding numerical codes.
