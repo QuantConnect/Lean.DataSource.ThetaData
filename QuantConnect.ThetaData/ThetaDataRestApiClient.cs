@@ -17,6 +17,7 @@ using RestSharp;
 using Newtonsoft.Json;
 using QuantConnect.Util;
 using QuantConnect.Logging;
+using QuantConnect.Configuration;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Interfaces;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
@@ -29,7 +30,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <summary>
         /// Represents the base URL for the REST API.
         /// </summary>
-        private const string RestApiBaseUrl = "http://127.0.0.1:25510/v2";
+        private readonly string RestApiBaseUrl = Config.Get("thetadata-rest-url", "http://127.0.0.1:25510/v2");
 
         /// <summary>
         /// Represents a client for making RESTFul API requests.
