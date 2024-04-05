@@ -1,0 +1,37 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.002.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.DataSource.ThetaData", "QuantConnect.ThetaData\QuantConnect.DataSource.ThetaData.csproj", "{BB6FBD65-4AB0-4DF8-8BFE-731BFEC5F33D}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.DataSource.ThetaData.Tests", "QuantConnect.ThetaData.Tests\QuantConnect.DataSource.ThetaData.Tests.csproj", "{F93E08F9-9961-4DBC-9959-EFA00775252A}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "QuantConnect.Tests", "..\Lean\Tests\QuantConnect.Tests.csproj", "{9A666189-E7DD-43DA-95DF-419E3E5363F3}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BB6FBD65-4AB0-4DF8-8BFE-731BFEC5F33D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BB6FBD65-4AB0-4DF8-8BFE-731BFEC5F33D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BB6FBD65-4AB0-4DF8-8BFE-731BFEC5F33D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BB6FBD65-4AB0-4DF8-8BFE-731BFEC5F33D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F93E08F9-9961-4DBC-9959-EFA00775252A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F93E08F9-9961-4DBC-9959-EFA00775252A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F93E08F9-9961-4DBC-9959-EFA00775252A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F93E08F9-9961-4DBC-9959-EFA00775252A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9A666189-E7DD-43DA-95DF-419E3E5363F3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9A666189-E7DD-43DA-95DF-419E3E5363F3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9A666189-E7DD-43DA-95DF-419E3E5363F3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9A666189-E7DD-43DA-95DF-419E3E5363F3}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {155C3765-EC51-49A5-99BF-856714A46247}
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,15 @@
+{
+  "description": "ThetaData provides a high-performance desktop interface to dozens of market data feeds. The QuantConnect integration enables research, backtesting, optimization, and live trading across multiple asset classes. ThetaData utilizes a specialized terminal built on the Java SDK.",
+  "platforms-features": [
+    {
+      "Platform Support": ["Cloud Platform", "Local Platform", "LEAN CLI"],
+      "Download Data": [0, 1, 1],
+      "Backtesting": [0, 1, 1],
+      "Optimization": [0, 1, 1],
+      "Live Trading": [0, 1, 1]
+    }
+  ],
+  "data-supported": ["Equity", "Equity Options", "Index", "Index Options"],
+  "documentation": "/docs/v2/lean-cli/datasets/thetadata",
+  "more-information": "https://www.thetadata.net/"
+}
