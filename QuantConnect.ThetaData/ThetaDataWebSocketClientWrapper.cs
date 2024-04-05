@@ -81,7 +81,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <param name="symbolMapper">Provides the mapping between Lean symbols and brokerage specific symbols.</param>
         /// <param name="maxStreamingContracts">The maximum number of contracts that can be streamed simultaneously under the subscription plan.</param>
         /// <param name="messageHandler">The method that handles messages received from the WebSocket client.</param>
-        public ThetaDataWebSocketClientWrapper(ISymbolMapper symbolMapper, uint maxStreamingContracts, Action<string> messageHandler)
+        public ThetaDataWebSocketClientWrapper(ISymbolMapper symbolMapper, uint maxStreamingContracts, Action<string> messageHandler, EventHandler<WebSocketError> OnError)
         {
             Initialize(BaseUrl);
 
@@ -91,6 +91,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
             Closed += OnClosed;
             Message += OnMessage;
+            Error += OnError;
         }
 
         /// <summary>

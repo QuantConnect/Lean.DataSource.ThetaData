@@ -1,4 +1,4 @@
-/*
+﻿/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -107,12 +107,25 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
             _optionChainProvider = new ThetaDataOptionChainProvider(_symbolMapper, _restApiClient);
 
-            _webSocketClient = new ThetaDataWebSocketClientWrapper(_symbolMapper, _userSubscriptionPlan.MaxStreamingContracts, OnMessage);
+            _webSocketClient = new ThetaDataWebSocketClientWrapper(_symbolMapper, _userSubscriptionPlan.MaxStreamingContracts, OnMessage, OnError);
             _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
             _subscriptionManager.SubscribeImpl += (symbols, _) => _webSocketClient.Subscribe(symbols);
             _subscriptionManager.UnsubscribeImpl += (symbols, _) => _webSocketClient.Unsubscribe(symbols);
 
             ValidateSubscription();
+        }
+
+        /// <summary>
+        /// Event handler for WebSocket errors in the ThetaDataWebSocketClientWrapper.
+        /// </summary>
+        /// <param name="_">The sender of the event.</param>
+        /// <param name="e">The WebSocketError object containing information about the error.</param>
+        /// <remarks>
+        /// This method throws an Exception with a message containing information about the error.
+        /// </remarks>
+        private void OnError(object? _, Brokerages.WebSocketError e)
+        {
+            throw new Exception($"{nameof(ThetaDataProvider)}.{nameof(OnError)}: {e.Message}");
         }
 
         public void Dispose()
