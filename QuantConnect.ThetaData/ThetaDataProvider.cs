@@ -81,6 +81,14 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         private bool isStreamingAvailableByUserSubscriptionPlan = false;
 
         /// <summary>
+        /// Represents the current state of internet connectivity.
+        /// </summary>
+        /// <remarks>
+        /// This boolean flag is used to track whether the internet connection is currently disconnected.
+        /// </remarks>
+        private volatile bool isInternetDisconnected;
+
+        /// <summary>
         /// The time provider instance. Used for improved testability
         /// </summary>
         protected virtual ITimeProvider TimeProvider { get; } = RealTimeProvider.Instance;
@@ -182,7 +190,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 case WebSocketHeaderType.Trade when leanSymbol != null && json.Trade != null:
                     HandleTradeMessage(leanSymbol, json.Trade.Value);
                     break;
-                case WebSocketHeaderType.Status:
+                case WebSocketHeaderType.Status when json.Header.Status == "DISCONNECTED":
+                    isInternetDisconnected = true;
+                    break;
+                case WebSocketHeaderType.Status when isInternetDisconnected:
+                    isInternetDisconnected = !_webSocketClient.Subscribe(_subscriptionManager.GetSubscribedSymbols(), true);
                     break;
                 default:
                     Log.Debug(message);
