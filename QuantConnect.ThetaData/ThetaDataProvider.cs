@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -76,6 +76,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         private ISubscriptionPlan _userSubscriptionPlan;
 
         /// <summary>
+        /// Indicates whether the user's subscription plan allows access to real-time updates on quote and trade channels.
+        /// </summary>
+        private bool isStreamingAvailableByUserSubscriptionPlan = false;
+
+        /// <summary>
         /// The time provider instance. Used for improved testability
         /// </summary>
         protected virtual ITimeProvider TimeProvider { get; } = RealTimeProvider.Instance;
@@ -118,7 +123,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <inheritdoc />
         public IEnumerator<BaseData>? Subscribe(SubscriptionDataConfig dataConfig, EventHandler newDataAvailableHandler)
         {
-            if (!CanSubscribe(dataConfig.Symbol) || _userSubscriptionPlan.MaxStreamingContracts == 0)
+            if (!CanSubscribe(dataConfig.Symbol) || !isStreamingAvailableByUserSubscriptionPlan)
             {
                 return null;
             }
@@ -224,7 +229,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 throw new ArgumentException($"An error occurred while parsing the price plan '{pricePlan}'. Please ensure that the provided price plan is valid and supported by the system.");
             }
 
-            return parsedPricePlan switch
+            ISubscriptionPlan userSubscriptionPlan = parsedPricePlan switch
             {
                 SubscriptionPlanType.Free => new FreeSubscriptionPlan(),
                 SubscriptionPlanType.Value => new ValueSubscriptionPlan(),
@@ -232,6 +237,17 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 SubscriptionPlanType.Pro => new ProSubscriptionPlan(),
                 _ => throw new ArgumentException($"{nameof(ThetaDataProvider)}.{nameof(GetUserSubscriptionPlan)}: Invalid subscription plan type.")
             };
+
+            if (userSubscriptionPlan.MaxStreamingContracts > 0)
+            {
+                isStreamingAvailableByUserSubscriptionPlan = true;
+            }
+            else
+            {
+                Log.Error($"{nameof(ThetaDataProvider)}.{nameof(GetUserSubscriptionPlan)}: Insufficient permissions to access or modify subscription plan for the user. Streaming service is not available for this user.");
+            }
+
+            return userSubscriptionPlan;
         }
 
         private class ModulesReadLicenseRead : Api.RestResponse
