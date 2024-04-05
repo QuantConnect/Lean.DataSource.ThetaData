@@ -25,6 +25,7 @@ using QuantConnect.Lean.DataSource.ThetaData.Models.SubscriptionPlans;
 namespace QuantConnect.Lean.DataSource.ThetaData.Tests
 {
     [TestFixture]
+    [Explicit("This test requires the ThetaData terminal to be running in order to execute properly.")]
     public class ThetaDataOptionChainProviderTests
     {
         private ThetaDataOptionChainProvider _thetaDataOptionChainProvider;
