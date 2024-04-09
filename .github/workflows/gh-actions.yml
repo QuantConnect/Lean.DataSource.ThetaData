@@ -46,4 +46,4 @@ jobs:
         run: dotnet build ./QuantConnect.ThetaData.Tests/QuantConnect.DataSource.ThetaData.Tests.csproj /p:Configuration=Release /v:quiet /p:WarningLevel=1
 
       - name: Run QuantConnect.ThetaData.Tests
-        run: dotnet test ./QuantConnect.ThetaData.Tests/bin/Release/QuantConnect.Lean.DataSource.ThetaData.dll
+        run: dotnet test ./QuantConnect.ThetaData.Tests/bin/Release/QuantConnect.Lean.DataSource.ThetaData.Tests.dll

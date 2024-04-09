@@ -53,8 +53,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
                 case TickType.Trade:
                     AssertTradeTickBars(history.Select(x => x as Tick), requestedSymbol);
                     break;
+                case TickType.Quote when resolution == Resolution.Tick:
+                    AssertQuoteTickBars(history.Select(x => x as Tick), requestedSymbol);
+                    break;
                 case TickType.Quote:
-                    AssertTickQuoteBars(history.Select(t => t as Tick), requestedSymbol);
+                    AssertQuoteBars(history.Select(t => t as QuoteBar), requestedSymbol, resolution.ToTimeSpan());
                     break;
             }
         }
@@ -74,7 +77,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
             }
         }
 
-        public static void AssertTickQuoteBars(IEnumerable<Tick> ticks, Symbol symbol = null)
+        public static void AssertQuoteTickBars(IEnumerable<Tick> ticks, Symbol symbol = null)
         {
             foreach (var tick in ticks)
             {
@@ -91,6 +94,41 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
                 Assert.That(tick.Time, Is.GreaterThan(default(DateTime)));
                 Assert.That(tick.EndTime, Is.GreaterThan(default(DateTime)));
                 Assert.IsNotEmpty(tick.SaleCondition);
+            }
+        }
+
+        public static void AssertQuoteBars(IEnumerable<QuoteBar> ticks, Symbol symbol, TimeSpan resolutionInTimeSpan)
+        {
+            foreach (var tick in ticks)
+            {
+                if (symbol != null)
+                {
+                    Assert.That(tick.Symbol, Is.EqualTo(symbol));
+                }
+
+                Assert.That(tick.Ask.Open, Is.GreaterThan(0));
+                Assert.That(tick.Ask.High, Is.GreaterThan(0));
+                Assert.That(tick.Ask.Low, Is.GreaterThan(0));
+                Assert.That(tick.Ask.Close, Is.GreaterThan(0));
+
+                Assert.That(tick.Bid.Open, Is.GreaterThan(0));
+                Assert.That(tick.Bid.High, Is.GreaterThan(0));
+                Assert.That(tick.Bid.Low, Is.GreaterThan(0));
+                Assert.That(tick.Bid.Close, Is.GreaterThan(0));
+
+                Assert.That(tick.Close, Is.GreaterThan(0));
+                Assert.That(tick.High, Is.GreaterThan(0));
+                Assert.That(tick.Low, Is.GreaterThan(0));
+                Assert.That(tick.Open, Is.GreaterThan(0));
+                Assert.That(tick.Price, Is.GreaterThan(0));
+                Assert.That(tick.Value, Is.GreaterThan(0));
+                Assert.That(tick.DataType, Is.EqualTo(MarketDataType.QuoteBar));
+                Assert.That(tick.EndTime, Is.GreaterThan(default(DateTime)));
+                Assert.That(tick.Time, Is.GreaterThan(default(DateTime)));
+
+                Assert.That(tick.LastAskSize, Is.GreaterThan(0));
+                Assert.That(tick.LastBidSize, Is.GreaterThan(0));
+                Assert.That(tick.Period, Is.EqualTo(resolutionInTimeSpan));
             }
         }
 

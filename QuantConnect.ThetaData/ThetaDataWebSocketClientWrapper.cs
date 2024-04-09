@@ -81,7 +81,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <param name="symbolMapper">Provides the mapping between Lean symbols and brokerage specific symbols.</param>
         /// <param name="maxStreamingContracts">The maximum number of contracts that can be streamed simultaneously under the subscription plan.</param>
         /// <param name="messageHandler">The method that handles messages received from the WebSocket client.</param>
-        public ThetaDataWebSocketClientWrapper(ISymbolMapper symbolMapper, uint maxStreamingContracts, Action<string> messageHandler)
+        public ThetaDataWebSocketClientWrapper(ISymbolMapper symbolMapper, uint maxStreamingContracts, Action<string> messageHandler, EventHandler<WebSocketError> OnError)
         {
             Initialize(BaseUrl);
 
@@ -91,13 +91,15 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
             Closed += OnClosed;
             Message += OnMessage;
+            Error += OnError;
         }
 
         /// <summary>
         /// Adds the specified symbols to the subscription
         /// </summary>
         /// <param name="symbols">The symbols to be added keyed by SecurityType</param>
-        public bool Subscribe(IEnumerable<Symbol> symbols)
+        /// <param name="isReSubscribeProcess">Indicates whether the subscription process is a resubscription, to prevent an increase in the <see cref="_subscribedSymbolCount"/> count.</param>
+        public bool Subscribe(IEnumerable<Symbol> symbols, bool isReSubscribeProcess = false)
         {
             if (!IsOpen)
             {
@@ -109,7 +111,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 lock (_lock)
                 {
                     // constantly following of current amount of subscribed symbols (post increment!)
-                    if (++_subscribedSymbolCount > _maxStreamingContracts)
+                    if (!isReSubscribeProcess && ++_subscribedSymbolCount > _maxStreamingContracts)
                     {
                         throw new ArgumentException($"{nameof(ThetaDataWebSocketClientWrapper)}.{nameof(Subscribe)}: Subscription Limit Exceeded. The number of symbols you're trying to subscribe to exceeds the maximum allowed limit of {_maxStreamingContracts}. Please adjust your subscription quantity or upgrade your plan accordingly. Current subscription count: {_subscribedSymbolCount}");
                     }
@@ -184,7 +186,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 }
             });
         }
-
 
         /// <summary>
         /// Event handler for processing WebSocket messages.

@@ -20,6 +20,7 @@ using NUnit.Framework;
 namespace QuantConnect.Lean.DataSource.ThetaData.Tests
 {
     [TestFixture]
+    [Explicit("This test requires the ThetaData terminal to be running in order to execute properly.")]
     public class ThetaDataHistoryProviderTests
     {
         ThetaDataProvider _thetaDataProvider = new();

@@ -182,7 +182,12 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                         return GetOptionEndOfDay(optionRequest,
                             // If Ask/Bid - prices/sizes zero, low quote activity, empty result, low volatility.
                             (eof) => eof.AskPrice == 0 || eof.AskSize == 0 || eof.BidPrice == 0 || eof.BidSize == 0,
-                            (quoteDateTime, eof) => new Tick(quoteDateTime, symbol, eof.AskCondition, ThetaDataExtensions.Exchanges[eof.AskExchange], eof.BidSize, eof.BidPrice, eof.AskSize, eof.AskPrice));
+                            (quoteDateTime, eof) =>
+                            {
+                                var bar = new QuoteBar(quoteDateTime, symbol, null, decimal.Zero, null, decimal.Zero, resolution.ToTimeSpan());
+                                bar.UpdateQuote(eof.BidPrice, eof.BidSize, eof.AskPrice, eof.AskSize);
+                                return bar;
+                            });
                     case TickType.OpenInterest:
                         optionRequest.Resource = "/hist/option/open_interest";
                         return GetHistoricalOpenInterestData(optionRequest, symbol);
@@ -205,7 +210,18 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                     case TickType.Quote:
                         optionRequest.AddQueryParameter("ivl", GetIntervalsInMilliseconds(resolution));
                         optionRequest.Resource = "/hist/option/quote";
-                        return GetHistoricalQuoteData(optionRequest, symbol);
+
+                        Func<QuoteResponse, BaseData> quoteCallback = resolution == Resolution.Tick ?
+                            (quote) => new Tick(quote.DateTimeMilliseconds, symbol, quote.AskCondition, ThetaDataExtensions.Exchanges[quote.AskExchange], quote.BidSize, quote.BidPrice, quote.AskSize, quote.AskPrice)
+                            :
+                            (quote) =>
+                            {
+                                var bar = new QuoteBar(quote.DateTimeMilliseconds, symbol, null, decimal.Zero, null, decimal.Zero, resolution.ToTimeSpan());
+                                bar.UpdateQuote(quote.BidPrice, quote.BidSize, quote.AskPrice, quote.AskSize);
+                                return bar;
+                            };
+
+                        return GetHistoricalQuoteData(optionRequest, symbol, quoteCallback);
                     default:
                         throw new ArgumentException($"Invalid tick type: {tickType}.");
                 }
@@ -234,7 +250,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             }
         }
 
-        private IEnumerable<BaseData> GetHistoricalQuoteData(RestRequest request, Symbol symbol)
+        private IEnumerable<BaseData> GetHistoricalQuoteData(RestRequest request, Symbol symbol, Func<QuoteResponse, BaseData> callback)
         {
             foreach (var quotes in _restApiClient.ExecuteRequest<BaseResponse<QuoteResponse>>(request))
             {
@@ -246,7 +262,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                         continue;
                     }
 
-                    yield return new Tick(quote.DateTimeMilliseconds, symbol, quote.AskCondition, ThetaDataExtensions.Exchanges[quote.AskExchange], quote.BidSize, quote.BidPrice, quote.AskSize, quote.AskPrice);
+                    yield return callback(quote);
                 }
             }
         }

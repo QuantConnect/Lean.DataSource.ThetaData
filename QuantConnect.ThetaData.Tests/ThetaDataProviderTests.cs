@@ -29,6 +29,7 @@ using QuantConnect.Lean.Engine.DataFeeds.Enumerators;
 namespace QuantConnect.Lean.DataSource.ThetaData.Tests
 {
     [TestFixture]
+    [Explicit("This test requires the ThetaData terminal to be running in order to execute properly.")]
     public class ThetaDataProviderTests
     {
         private ThetaDataProvider _thetaDataProvider;

@@ -76,6 +76,19 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         private ISubscriptionPlan _userSubscriptionPlan;
 
         /// <summary>
+        /// Indicates whether the user's subscription plan allows access to real-time updates on quote and trade channels.
+        /// </summary>
+        private bool _streamingAvailable = false;
+
+        /// <summary>
+        /// Represents the current state of internet connectivity.
+        /// </summary>
+        /// <remarks>
+        /// This boolean flag is used to track whether the internet connection is currently disconnected.
+        /// </remarks>
+        private volatile bool isInternetDisconnected;
+
+        /// <summary>
         /// The time provider instance. Used for improved testability
         /// </summary>
         protected virtual ITimeProvider TimeProvider { get; } = RealTimeProvider.Instance;
@@ -102,12 +115,25 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
             _optionChainProvider = new ThetaDataOptionChainProvider(_symbolMapper, _restApiClient);
 
-            _webSocketClient = new ThetaDataWebSocketClientWrapper(_symbolMapper, _userSubscriptionPlan.MaxStreamingContracts, OnMessage);
+            _webSocketClient = new ThetaDataWebSocketClientWrapper(_symbolMapper, _userSubscriptionPlan.MaxStreamingContracts, OnMessage, OnError);
             _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
             _subscriptionManager.SubscribeImpl += (symbols, _) => _webSocketClient.Subscribe(symbols);
             _subscriptionManager.UnsubscribeImpl += (symbols, _) => _webSocketClient.Unsubscribe(symbols);
 
             ValidateSubscription();
+        }
+
+        /// <summary>
+        /// Event handler for WebSocket errors in the ThetaDataWebSocketClientWrapper.
+        /// </summary>
+        /// <param name="_">The sender of the event.</param>
+        /// <param name="e">The WebSocketError object containing information about the error.</param>
+        /// <remarks>
+        /// This method throws an Exception with a message containing information about the error.
+        /// </remarks>
+        private void OnError(object? _, Brokerages.WebSocketError e)
+        {
+            throw new Exception($"{nameof(ThetaDataProvider)}.{nameof(OnError)}: {e.Message}");
         }
 
         public void Dispose()
@@ -118,7 +144,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <inheritdoc />
         public IEnumerator<BaseData>? Subscribe(SubscriptionDataConfig dataConfig, EventHandler newDataAvailableHandler)
         {
-            if (!CanSubscribe(dataConfig.Symbol) || _userSubscriptionPlan.MaxStreamingContracts == 0)
+            if (!CanSubscribe(dataConfig.Symbol) || !_streamingAvailable)
             {
                 return null;
             }
@@ -164,7 +190,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 case WebSocketHeaderType.Trade when leanSymbol != null && json.Trade != null:
                     HandleTradeMessage(leanSymbol, json.Trade.Value);
                     break;
-                case WebSocketHeaderType.Status:
+                case WebSocketHeaderType.Status when json.Header.Status == "DISCONNECTED":
+                    isInternetDisconnected = true;
+                    break;
+                case WebSocketHeaderType.Status when isInternetDisconnected:
+                    isInternetDisconnected = !_webSocketClient.Subscribe(_subscriptionManager.GetSubscribedSymbols(), true);
                     break;
                 default:
                     Log.Debug(message);
@@ -224,7 +254,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 throw new ArgumentException($"An error occurred while parsing the price plan '{pricePlan}'. Please ensure that the provided price plan is valid and supported by the system.");
             }
 
-            return parsedPricePlan switch
+            ISubscriptionPlan userSubscriptionPlan = parsedPricePlan switch
             {
                 SubscriptionPlanType.Free => new FreeSubscriptionPlan(),
                 SubscriptionPlanType.Value => new ValueSubscriptionPlan(),
@@ -232,6 +262,17 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 SubscriptionPlanType.Pro => new ProSubscriptionPlan(),
                 _ => throw new ArgumentException($"{nameof(ThetaDataProvider)}.{nameof(GetUserSubscriptionPlan)}: Invalid subscription plan type.")
             };
+
+            if (userSubscriptionPlan.MaxStreamingContracts > 0)
+            {
+                _streamingAvailable = true;
+            }
+            else
+            {
+                Log.Error($"{nameof(ThetaDataProvider)}.{nameof(GetUserSubscriptionPlan)}: Insufficient permissions to access or modify subscription plan for the user. Streaming service is not available for this user.");
+            }
+
+            return userSubscriptionPlan;
         }
 
         private class ModulesReadLicenseRead : Api.RestResponse

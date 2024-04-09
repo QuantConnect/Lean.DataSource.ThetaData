@@ -129,10 +129,12 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
         protected virtual IEnumerable<Symbol> GetOptions(Symbol symbol, DateTime startUtc, DateTime endUtc)
         {
-            foreach (var option in _historyProvider.GetOptionChain(symbol, startUtc, endUtc))
-            {
-                yield return option;
-            }
+            var exchangeHours = _marketHoursDatabase.GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType);
+
+            return Time.EachTradeableDay(exchangeHours, startUtc.Date, endUtc.Date)
+                .Select(date => _historyProvider.GetOptionChain(symbol, date))
+                .SelectMany(x => x)
+                .Distinct();
         }
 
         /// <summary>
