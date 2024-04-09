@@ -16,6 +16,7 @@
 using RestSharp;
 using QuantConnect.Logging;
 using QuantConnect.Interfaces;
+using QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Common;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
@@ -75,43 +76,16 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             var optionsSecurityType = underlying.SecurityType == SecurityType.Index ? SecurityType.IndexOption : SecurityType.Option;
             var optionStyle = optionsSecurityType.DefaultOptionStyle();
 
-            var strikeRequest = new RestRequest("/list/strikes", Method.GET);
-            strikeRequest.AddQueryParameter("root", underlying.Value);
-            foreach (var expiryDateStr in GetExpirationDates(underlying.Value))
+            // just using quote, which is the most inclusive
+            var request = new RestRequest($"/list/contracts/option/quote", Method.GET);
+
+            request.AddQueryParameter("start_date", date.ConvertToThetaDataDateFormat());
+            request.AddQueryParameter("root", underlying.Value);
+
+            foreach (var option in _restApiClient.ExecuteRequest<BaseResponse<QuoteListContract>>(request).SelectMany(x => x.Response))
             {
-                var expirationDate = expiryDateStr.ConvertFromThetaDataDateFormat();
-
-                if (expirationDate < date)
-                {
-                    continue;
-                }
-
-                strikeRequest.AddOrUpdateParameter("exp", expirationDate.ConvertToThetaDataDateFormat());
-
-                foreach (var strike in _restApiClient.ExecuteRequest<BaseResponse<decimal>>(strikeRequest).SelectMany(strikes => strikes.Response))
-                {
-                    foreach (var right in optionRights)
-                    {
-                        yield return _symbolMapper.GetLeanSymbol(underlying.Value, optionsSecurityType, underlying.ID.Market, optionStyle,
-                            expirationDate, strike, right, underlying);
-                    }
-                }
-            }
-        }
-
-        /// <summary>
-        /// Returns all expirations date for a ticker.
-        /// </summary>
-        /// <param name="ticker">The underlying symbol value to list expirations for.</param>
-        /// <returns>An enumerable collection of expiration dates in string format (e.g., "20240303" for March 3, 2024).</returns>
-        public IEnumerable<string> GetExpirationDates(string ticker)
-        {
-            var request = new RestRequest("/list/expirations", Method.GET);
-            request.AddQueryParameter("root", ticker);
-
-            foreach (var expirationDate in _restApiClient.ExecuteRequest<BaseResponse<string>>(request).SelectMany(x => x.Response))
-            {
-                yield return expirationDate;
+                yield return _symbolMapper.GetLeanSymbol(underlying.Value, optionsSecurityType, underlying.ID.Market, optionStyle,
+                    option.Expiry, option.Strike, option.Right == "C" ? OptionRight.Call : OptionRight.Put, underlying);
             }
         }
     }

@@ -53,24 +53,5 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <param name="requestedDate">The date from which to find option contracts.</param>
         /// <returns>A collection of option contracts.</returns>
         public IEnumerable<Symbol> GetOptionChain(Symbol symbol, DateTime requestedDate) => _optionChainProvider.GetOptionContractList(symbol, requestedDate);
-
-        /// <summary>
-        /// Retrieves a collection of option contracts for a given security symbol and requested date.
-        /// We have returned option contracts from <paramref name="startDate"/> to a <paramref name="endDate"/>
-        /// </summary>
-        /// <param name="requestedSymbol">The unique security identifier for which option contracts are to be retrieved.</param>
-        /// <param name="startDate">The start date from which to find option contracts.</param>
-        /// <param name="endDate">The end date from which to find option contracts</param>
-        /// <returns>A collection of option contracts.</returns>
-        public IEnumerable<Symbol> GetOptionChain(Symbol requestedSymbol, DateTime startDate, DateTime endDate)
-        {
-            foreach (var symbol in _optionChainProvider.GetOptionContractList(requestedSymbol, startDate))
-            {
-                if (symbol.ID.Date >= startDate && symbol.ID.Date <= endDate)
-                {
-                    yield return symbol;
-                }
-            }
-        }
     }
 }
