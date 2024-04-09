@@ -78,7 +78,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <summary>
         /// Indicates whether the user's subscription plan allows access to real-time updates on quote and trade channels.
         /// </summary>
-        private bool isStreamingAvailableByUserSubscriptionPlan = false;
+        private bool _streamingAvailable = false;
 
         /// <summary>
         /// Represents the current state of internet connectivity.
@@ -144,7 +144,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <inheritdoc />
         public IEnumerator<BaseData>? Subscribe(SubscriptionDataConfig dataConfig, EventHandler newDataAvailableHandler)
         {
-            if (!CanSubscribe(dataConfig.Symbol) || !isStreamingAvailableByUserSubscriptionPlan)
+            if (!CanSubscribe(dataConfig.Symbol) || !_streamingAvailable)
             {
                 return null;
             }
@@ -265,7 +265,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
             if (userSubscriptionPlan.MaxStreamingContracts > 0)
             {
-                isStreamingAvailableByUserSubscriptionPlan = true;
+                _streamingAvailable = true;
             }
             else
             {
