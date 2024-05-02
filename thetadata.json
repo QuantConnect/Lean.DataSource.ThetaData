@@ -9,7 +9,30 @@
       "Live Trading": [0, 1, 1]
     }
   ],
-  "data-supported": ["Equity", "Equity Options", "Index", "Index Options"],
+  "data-supported": ["Equity Options", "Index Options"],
   "documentation": "/docs/v2/lean-cli/datasets/thetadata",
-  "more-information": "https://www.thetadata.net/"
+  "more-information": "https://www.thetadata.net/",
+  "module-specification": {
+    "download": {
+      "data-types": [
+        "OpenInterest",
+        "Trade",
+        "Quote"
+      ],
+      "resolutions": [
+        "Tick",
+        "Second",
+        "Minute",
+        "Hour",
+        "Daily"
+      ],
+      "security-types": [
+        "Option",
+        "IndexOption"
+      ],
+      "markets": [
+        "USA"
+      ]
+    }
+  }
 }
