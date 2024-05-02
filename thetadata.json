@@ -13,26 +13,26 @@
   "documentation": "/docs/v2/lean-cli/datasets/thetadata",
   "more-information": "https://www.thetadata.net/",
   "module-specification": {
-		"download": {
-			"data-types": [
-				"OpenInterest",
-				"Trade",
-				"Quote"
-			],
-			"resolutions": [
-				"Tick",
+    "download": {
+      "data-types": [
+        "OpenInterest",
+        "Trade",
+        "Quote"
+      ],
+      "resolutions": [
+        "Tick",
         "Second",
         "Minute",
         "Hour",
         "Daily"
-			],
-			"security-types": [
+      ],
+      "security-types": [
         "Option",
-				"IndexOption"
-			],
-			"markets": [
-				"USA"
-			]
-		}
-	}
+        "IndexOption"
+      ],
+      "markets": [
+        "USA"
+      ]
+    }
+  }
 }
