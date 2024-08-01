@@ -60,5 +60,40 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
 
             TestHelpers.ValidateHistoricalBaseData(history, resolution, tickType, startDate, endDate, symbol);
         }
+
+        [TestCase("AAPL", Resolution.Tick, TickType.Trade, "2024/07/02", "2024/07/30", Explicit = true, Description = "Skipped: Long execution time")]
+        [TestCase("AAPL", Resolution.Tick, TickType.Quote, "2024/07/26", "2024/07/30", Explicit = true, Description = "Skipped: Long execution time")]
+        [TestCase("AAPL", Resolution.Tick, TickType.Trade, "2024/07/26", "2024/07/30")]
+        [TestCase("AAPL", Resolution.Second, TickType.Trade, "2024/07/02", "2024/07/30")]
+        [TestCase("AAPL", Resolution.Second, TickType.Quote, "2024/07/02", "2024/07/30")]
+        [TestCase("AAPL", Resolution.Minute, TickType.Trade, "2024/07/02", "2024/07/30")]
+        [TestCase("AAPL", Resolution.Minute, TickType.Quote, "2024/07/02", "2024/07/30")]
+        [TestCase("AAPL", Resolution.Hour, TickType.Trade, "2024/07/26", "2024/07/30")]
+        [TestCase("AAPL", Resolution.Hour, TickType.Trade, "2024/07/02", "2024/07/30")]
+        [TestCase("AAPL", Resolution.Hour, TickType.Quote, "2024/07/02", "2024/07/30")]
+        [TestCase("AAPL", Resolution.Daily, TickType.Trade, "2024/07/01", "2024/07/30")]
+        [TestCase("AAPL", Resolution.Daily, TickType.Quote, "2024/07/01", "2024/07/30")]
+        public void GetHistoryEquityData(string ticker, Resolution resolution, TickType tickType, DateTime startDate, DateTime endDate)
+        {
+            var symbol = TestHelpers.CreateSymbol(ticker, SecurityType.Equity);
+
+            var historyRequest = TestHelpers.CreateHistoryRequest(symbol, resolution, tickType, startDate, endDate);
+
+            var history = _thetaDataProvider.GetHistory(historyRequest).ToList();
+
+            TestHelpers.ValidateHistoricalBaseData(history, resolution, tickType, startDate, endDate, symbol);
+        }
+
+        [TestCase("SPX", Resolution.Daily, TickType.Trade, "2024/07/01", "2024/07/30")]
+        public void GetHistoryIndexData(string ticker, Resolution resolution, TickType tickType, DateTime startDate, DateTime endDate)
+        {
+            var symbol = TestHelpers.CreateSymbol(ticker, SecurityType.Index);
+
+            var historyRequest = TestHelpers.CreateHistoryRequest(symbol, resolution, tickType, startDate, endDate);
+
+            var history = _thetaDataProvider.GetHistory(historyRequest).ToList();
+
+            TestHelpers.ValidateHistoricalBaseData(history, resolution, tickType, startDate, endDate, symbol);
+        }
     }
 }
