@@ -39,6 +39,14 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         private Dictionary<Symbol, string> _leanSymbolCache = new();
 
         /// <summary>
+        /// Represents a set of supported security types.
+        /// </summary>
+        /// <remarks>
+        /// This HashSet contains the supported security types that are allowed within the system.
+        /// </remarks>
+        public readonly HashSet<SecurityType> SupportedSecurityType = new() { SecurityType.Equity, SecurityType.Index, SecurityType.Option, SecurityType.IndexOption };
+
+        /// <summary>
         /// Converts a Lean symbol instance to a brokerage symbol.
         /// </summary>
         /// <param name="symbol">The Lean symbol instance to be converted.</param>

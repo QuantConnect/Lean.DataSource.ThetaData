@@ -228,12 +228,12 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// </summary>
         /// <param name="symbol">The symbol</param>
         /// <returns>returns true if brokerage supports the specified symbol; otherwise false</returns>
-        private static bool CanSubscribe(Symbol symbol)
+        private bool CanSubscribe(Symbol symbol)
         {
             return
                 symbol.Value.IndexOfInvariant("universe", true) == -1 &&
                 !symbol.IsCanonical() &&
-                symbol.SecurityType == SecurityType.Option || symbol.SecurityType == SecurityType.IndexOption;
+                _symbolMapper.SupportedSecurityType.Contains(symbol.SecurityType);
         }
 
         /// <summary>
