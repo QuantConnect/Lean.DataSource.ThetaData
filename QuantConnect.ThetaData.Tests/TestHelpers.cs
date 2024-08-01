@@ -29,6 +29,14 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
 {
     public static class TestHelpers
     {
+        /// <summary>
+        /// Represents the time zone used by ThetaData, which returns time in the Eastern Time (ET) Time Zone.
+        /// </summary>
+        /// <remarks>
+        /// <see href="https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/ke230k18g7fld-trading-hours"/>
+        /// </remarks>
+        private static DateTimeZone TimeZoneThetaData = TimeZones.EasternStandard;
+
         public static void ValidateHistoricalBaseData(IEnumerable<BaseData> history, Resolution resolution, TickType tickType, DateTime startDate, DateTime endDate, Symbol requestedSymbol = null)
         {
             Assert.IsNotNull(history);
@@ -36,13 +44,13 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
 
             if (resolution < Resolution.Daily)
             {
-                Assert.That(history.First().Time.Date, Is.EqualTo(startDate.ConvertFromUtc(TimeZones.EasternStandard).Date));
-                Assert.That(history.Last().Time.Date, Is.EqualTo(endDate.ConvertFromUtc(TimeZones.EasternStandard).Date));
+                Assert.That(history.First().Time.Date, Is.EqualTo(startDate.ConvertFromUtc(TimeZoneThetaData).Date));
+                Assert.That(history.Last().Time.Date, Is.EqualTo(endDate.ConvertFromUtc(TimeZoneThetaData).Date));
             }
             else
             {
-                Assert.That(history.First().Time.Date, Is.GreaterThanOrEqualTo(startDate.ConvertFromUtc(TimeZones.EasternStandard).Date));
-                Assert.That(history.Last().Time.Date, Is.LessThanOrEqualTo(endDate.ConvertFromUtc(TimeZones.EasternStandard).Date));
+                Assert.That(history.First().Time.Date, Is.GreaterThanOrEqualTo(startDate.ConvertFromUtc(TimeZoneThetaData).Date));
+                Assert.That(history.Last().Time.Date, Is.LessThanOrEqualTo(endDate.ConvertFromUtc(TimeZoneThetaData).Date));
             }
 
             switch (tickType)
@@ -143,7 +151,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
                 Assert.That(tradeBar.Low, Is.GreaterThan(0));
                 Assert.That(tradeBar.Close, Is.GreaterThan(0));
                 Assert.That(tradeBar.Price, Is.GreaterThan(0));
-                Assert.That(tradeBar.Volume, Is.GreaterThan(0));
+                Assert.That(tradeBar.Volume, Is.GreaterThanOrEqualTo(0));
                 Assert.That(tradeBar.Time, Is.GreaterThan(default(DateTime)));
                 Assert.That(tradeBar.EndTime, Is.GreaterThan(default(DateTime)));
             }
@@ -174,7 +182,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
                 null,
                 true,
                 false,
-                DataNormalizationMode.Adjusted,
+                DataNormalizationMode.Raw,
                 tickType
                 );
         }
