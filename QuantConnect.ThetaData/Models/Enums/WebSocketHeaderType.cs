@@ -33,4 +33,10 @@ public enum WebSocketHeaderType
 
     [EnumMember(Value = "OHLC")]
     Ohlc = 3,
+
+    [EnumMember(Value = "REQ_RESPONSE")]
+    ReqResponse = 4,
+
+    [EnumMember(Value = "STATE")]
+    State = 5
 }
