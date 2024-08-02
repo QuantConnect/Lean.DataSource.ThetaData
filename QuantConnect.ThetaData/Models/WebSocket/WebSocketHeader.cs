@@ -32,13 +32,13 @@ public readonly struct WebSocketHeader
     public string Response { get; }
 
     [JsonProperty("req_id")]
-    public uint RequestId { get; }
+    public int RequestId { get; }
 
     [JsonProperty("state")]
     public string State { get; }
 
     [JsonConstructor]
-    public WebSocketHeader(WebSocketHeaderType type, string status, string response, uint requestId, string state)
+    public WebSocketHeader(WebSocketHeaderType type, string status, string response, int requestId, string state)
     {
         Type = type;
         Status = status;
