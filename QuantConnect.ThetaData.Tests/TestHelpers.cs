@@ -58,8 +58,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
                 case TickType.Trade when resolution != Resolution.Tick:
                     AssertTradeBars(history.Select(x => x as TradeBar), requestedSymbol, resolution.ToTimeSpan());
                     break;
-                case TickType.Trade:
+                case TickType.Trade when requestedSymbol.SecurityType != SecurityType.Index:
                     AssertTradeTickBars(history.Select(x => x as Tick), requestedSymbol);
+                    break;
+                case TickType.Trade when requestedSymbol.SecurityType == SecurityType.Index:
+                    AssertIndexTradeTickBars(history.Select(x => x as Tick), requestedSymbol);
                     break;
                 case TickType.Quote when resolution == Resolution.Tick:
                     AssertQuoteTickBars(history.Select(x => x as Tick), requestedSymbol);
@@ -82,6 +85,19 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
                 Assert.That(tick.Price, Is.GreaterThan(0));
                 Assert.That(tick.Value, Is.GreaterThan(0));
                 Assert.IsNotEmpty(tick.SaleCondition);
+            }
+        }
+
+        public static void AssertIndexTradeTickBars(IEnumerable<Tick> ticks, Symbol symbol = null)
+        {
+            foreach (var tick in ticks)
+            {
+                if (symbol != null)
+                {
+                    Assert.That(tick.Symbol, Is.EqualTo(symbol));
+                }
+
+                Assert.That(tick.Price, Is.GreaterThan(0));
             }
         }
 

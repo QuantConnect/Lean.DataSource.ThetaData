@@ -60,6 +60,15 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// </remarks>
         private volatile bool _invalidOpenInterestWarningFired;
 
+        /// <summary>
+        /// Indicates whether a warning has been triggered for an invalid TickType request for Index securities.
+        /// </summary>
+        /// <remarks>
+        /// This flag is set to true when an invalid TickType request is made for Index securities. 
+        /// Specifically, only 'Trade' TickType is supported for Index securities, and this warning helps to prevent invalid requests.
+        /// </remarks>
+        private volatile bool _invalidIndexTickTypeWarningFired;
+
         /// <inheritdoc />
         public override void Initialize(HistoryProviderInitializeParameters parameters)
         { }
@@ -134,7 +143,17 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 if (!_invalidOpenInterestWarningFired)
                 {
                     _invalidOpenInterestWarningFired = true;
-                    Log.Trace($"Invalid data request: TickType 'OpenInterest' only supports Resolution 'Daily' and SecurityType 'Option'. Requested: Resolution '{historyRequest.Resolution}', SecurityType '{historyRequest.Symbol.SecurityType}'.");
+                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Invalid data request: TickType 'OpenInterest' only supports Resolution 'Daily' and SecurityType 'Option'. Requested: Resolution '{historyRequest.Resolution}', SecurityType '{historyRequest.Symbol.SecurityType}'.");
+                }
+                return null;
+            }
+
+            if (historyRequest.Symbol.SecurityType == SecurityType.Index && historyRequest.TickType != TickType.Trade)
+            {
+                if (!_invalidIndexTickTypeWarningFired)
+                {
+                    _invalidIndexTickTypeWarningFired = true;
+                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Request error: For Index securities, only 'Trade' TickType is supported.You requested '{historyRequest.TickType}'.");
                 }
                 return null;
             }
@@ -146,6 +165,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             restRequest.AddQueryParameter("end_date", historyRequest.EndTimeUtc.ConvertFromUtc(TimeZones.EasternStandard).ConvertToThetaDataDateFormat());
 
             restRequest.Resource = GetResourceUrlHistoryData(historyRequest.Symbol.SecurityType, historyRequest.TickType, historyRequest.Resolution);
+
+            if (historyRequest.Symbol.SecurityType == SecurityType.Index && historyRequest.Resolution <= Resolution.Hour)
+            {
+                return GetIndexIntradayHistoryData(restRequest, historyRequest.Symbol, historyRequest.Resolution);
+            }
 
             switch (historyRequest.Resolution)
             {
@@ -159,6 +183,36 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                     return GetDailyHistoryData(restRequest, historyRequest.Symbol, historyRequest.Resolution, historyRequest.TickType);
                 default:
                     throw new NotSupportedException();
+            }
+        }
+
+        public IEnumerable<BaseData>? GetIndexIntradayHistoryData(RestRequest request, Symbol symbol, Resolution resolution)
+        {
+            request.AddQueryParameter("ivl", GetIntervalsInMilliseconds(resolution));
+
+            foreach (var prices in _restApiClient.ExecuteRequest<BaseResponse<PriceResponse>>(request))
+            {
+                if (resolution == Resolution.Tick)
+                {
+                    foreach (var price in prices.Response)
+                    {
+                        if (price.Price != 0m)
+                        {
+                            yield return new Tick(price.DateTimeMilliseconds, symbol, "", "", 0m, price.Price);
+                        }
+                    }
+                }
+                else
+                {
+                    var period = resolution.ToTimeSpan();
+                    foreach (var price in prices.Response)
+                    {
+                        if (price.Price != 0m)
+                        {
+                            yield return new TradeBar(price.DateTimeMilliseconds, symbol, price.Price, price.Price, price.Price, price.Price, 0m, period);
+                        }
+                    }
+                }
             }
         }
 
