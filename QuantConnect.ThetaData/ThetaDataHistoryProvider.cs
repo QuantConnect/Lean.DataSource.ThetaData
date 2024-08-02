@@ -310,6 +310,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             {
                 request.AddOrUpdateParameter("start_date", dateRange.startDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
                 request.AddOrUpdateParameter("end_date", dateRange.endDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
+                request.AddOrUpdateParameter("start_time", "0", ParameterType.QueryString);
 
                 foreach (var trades in _restApiClient.ExecuteRequest<BaseResponse<TradeResponse>>(request))
                 {

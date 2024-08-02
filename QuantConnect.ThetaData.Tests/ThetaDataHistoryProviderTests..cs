@@ -100,5 +100,19 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
 
             TestHelpers.ValidateHistoricalBaseData(history, resolution, tickType, startDate, endDate, symbol);
         }
+
+        [TestCase("AAPL", Resolution.Tick, TickType.Trade, "2024/07/24", "2024/07/26", Explicit = true, Description = "Skipped: Long execution time")]
+        public void GetHistoryTickTradeValidateOnDistinctData(string ticker, Resolution resolution, TickType tickType, DateTime startDate, DateTime endDate)
+        {
+            var symbol = TestHelpers.CreateSymbol(ticker, SecurityType.Equity);
+
+            var historyRequest = TestHelpers.CreateHistoryRequest(symbol, resolution, tickType, startDate, endDate);
+
+            var history = _thetaDataProvider.GetHistory(historyRequest).ToList();
+
+            var distinctHistory = history.Distinct().ToList();
+
+            Assert.That(history.Count, Is.EqualTo(distinctHistory.Count));
+        }
     }
 }
