@@ -61,15 +61,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// </remarks>
         private volatile bool _invalidIndexTickTypeWarningFired;
 
-        /// <summary>
-        /// Indicates whether a warning has been triggered for an invalid TickType request when the SecurityType is not 'Option'.
-        /// </summary>
-        /// <remarks>
-        /// This flag is set to true when a TickType of 'OpenInterest' is requested with a SecurityType other than 'Option'. 
-        /// This warning helps to prevent invalid requests since 'OpenInterest' is only supported for 'Option' security types.
-        /// </remarks>
-        private bool _invalidSecurityTypeOfOpenInterestWarningFired;
-
         /// <inheritdoc />
         public override void Initialize(HistoryProviderInitializeParameters parameters)
         { }
@@ -139,17 +130,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 return null;
             }
 
-            if (historyRequest.TickType == TickType.OpenInterest && historyRequest.Symbol.SecurityType != SecurityType.Option)
-            {
-                // Log warning only once per instance
-                if (!_invalidSecurityTypeOfOpenInterestWarningFired)
-                {
-                    _invalidSecurityTypeOfOpenInterestWarningFired = true;
-                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Invalid data request. TickType 'OpenInterest' only supports SecurityType 'Option'. Requested: Resolution '{historyRequest.Resolution}', SecurityType '{historyRequest.Symbol.SecurityType}'.");
-                }
-                return null;
-            }
-
             if (historyRequest.Symbol.SecurityType == SecurityType.Index && historyRequest.TickType != TickType.Trade)
             {
                 if (!_invalidIndexTickTypeWarningFired)
@@ -172,7 +152,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             {
                 return GetIndexIntradayHistoryData(restRequest, historyRequest.Symbol, historyRequest.Resolution);
             }
-            else if (historyRequest.TickType == TickType.OpenInterest && historyRequest.Symbol.SecurityType == SecurityType.Option || historyRequest.Symbol.SecurityType == SecurityType.IndexOption)
+            else if (historyRequest.TickType == TickType.OpenInterest)
             {
                 return GetHistoricalOpenInterestData(restRequest, historyRequest.Symbol);
             }
