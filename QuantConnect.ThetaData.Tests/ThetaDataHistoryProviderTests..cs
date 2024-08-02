@@ -25,8 +25,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
     {
         ThetaDataProvider _thetaDataProvider = new();
 
-
-        [TestCase("AAPL", SecurityType.Option, Resolution.Hour, TickType.OpenInterest, "2024/03/18", "2024/03/28", Description = "Wrong Resolution for OpenInterest")]
         [TestCase("AAPL", SecurityType.Option, Resolution.Hour, TickType.OpenInterest, "2024/03/28", "2024/03/18", Description = "StartDate > EndDate")]
         [TestCase("AAPL", SecurityType.Equity, Resolution.Hour, TickType.OpenInterest, "2024/03/28", "2024/04/02", Description = "Wrong TickType")]
         [TestCase("AAPL", SecurityType.Equity, Resolution.Daily, TickType.Trade, "2024/07/07", "2024/07/08", Description = "Use Weekend data, No data return")]

@@ -53,14 +53,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         private volatile bool _invalidStartTimeWarningFired;
 
         /// <summary>
-        /// Indicates whether an warning should be raised when encountering invalid open interest data for an option security type at daily resolution.
-        /// </summary>
-        /// <remarks>
-        /// This flag is set to true when an error is detected for invalid open interest data for options at daily resolution.
-        /// </remarks>
-        private volatile bool _invalidOpenInterestWarningFired;
-
-        /// <summary>
         /// Indicates whether a warning has been triggered for an invalid TickType request for Index securities.
         /// </summary>
         /// <remarks>
@@ -147,30 +139,15 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 return null;
             }
 
-            if (historyRequest.TickType == TickType.OpenInterest)
+            if (historyRequest.TickType == TickType.OpenInterest && historyRequest.Symbol.SecurityType != SecurityType.Option)
             {
-                if (historyRequest.Symbol.SecurityType != SecurityType.Option)
+                // Log warning only once per instance
+                if (!_invalidSecurityTypeOfOpenInterestWarningFired)
                 {
-                    // Log warning only once per instance
-                    if (!_invalidSecurityTypeOfOpenInterestWarningFired)
-                    {
-                        _invalidSecurityTypeOfOpenInterestWarningFired = true;
-                        Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Invalid data request. TickType 'OpenInterest' only supports SecurityType 'Option'. Requested: Resolution '{historyRequest.Resolution}', SecurityType '{historyRequest.Symbol.SecurityType}'.");
-                    }
-                    return null;
+                    _invalidSecurityTypeOfOpenInterestWarningFired = true;
+                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Invalid data request. TickType 'OpenInterest' only supports SecurityType 'Option'. Requested: Resolution '{historyRequest.Resolution}', SecurityType '{historyRequest.Symbol.SecurityType}'.");
                 }
-
-                // Check if the Resolution is not 'Daily' for the valid SecurityType 'Option'
-                if (historyRequest.Resolution != Resolution.Daily)
-                {
-                    // Log warning only once per instance
-                    if (!_invalidOpenInterestWarningFired)
-                    {
-                        _invalidOpenInterestWarningFired = true;
-                        Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Invalid data request. TickType 'OpenInterest' only supports Resolution 'Daily'. Requested: Resolution '{historyRequest.Resolution}', SecurityType '{historyRequest.Symbol.SecurityType}'.");
-                    }
-                    return null;
-                }
+                return null;
             }
 
             if (historyRequest.Symbol.SecurityType == SecurityType.Index && historyRequest.TickType != TickType.Trade)
@@ -194,6 +171,10 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             if (historyRequest.Symbol.SecurityType == SecurityType.Index && historyRequest.Resolution <= Resolution.Hour)
             {
                 return GetIndexIntradayHistoryData(restRequest, historyRequest.Symbol, historyRequest.Resolution);
+            }
+            else if (historyRequest.TickType == TickType.OpenInterest && historyRequest.Symbol.SecurityType == SecurityType.Option || historyRequest.Symbol.SecurityType == SecurityType.IndexOption)
+            {
+                return GetHistoricalOpenInterestData(restRequest, historyRequest.Symbol);
             }
 
             switch (historyRequest.Resolution)
@@ -304,9 +285,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                             bar.UpdateQuote(eof.BidPrice, eof.BidSize, eof.AskPrice, eof.AskSize);
                             return bar;
                         });
-                case TickType.OpenInterest when symbol.SecurityType == SecurityType.Option || symbol.SecurityType == SecurityType.IndexOption:
-                    request.Resource = "/hist/option/open_interest";
-                    return GetHistoricalOpenInterestData(request, symbol);
                 default:
                     throw new ArgumentException($"Invalid tick type: {tickType}.");
             }
