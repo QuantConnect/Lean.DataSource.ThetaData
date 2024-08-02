@@ -136,9 +136,25 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         private IEnumerable<string> GetContractSubscriptionMessage(bool isSubscribe, Symbol symbol)
         {
             var brokerageSymbol = _symbolMapper.GetBrokerageSymbol(symbol).Split(',');
-            foreach (var channel in Channels)
+
+            switch (symbol.SecurityType)
             {
-                yield return GetMessage(isSubscribe, channel, brokerageSymbol[0], brokerageSymbol[1], brokerageSymbol[2], brokerageSymbol[3]);
+                case SecurityType.Equity:
+                    foreach (var channel in Channels)
+                    {
+                        yield return GetMessage(isSubscribe, channel, brokerageSymbol[0], symbol.SecurityType);
+                    }
+                    break;
+                case SecurityType.Index:
+                    yield return GetMessage(isSubscribe, "TRADE", brokerageSymbol[0], symbol.SecurityType);
+                    break;
+                case SecurityType.Option:
+                case SecurityType.IndexOption:
+                    foreach (var channel in Channels)
+                    {
+                        yield return GetMessageOption(isSubscribe, channel, brokerageSymbol[0], brokerageSymbol[1], brokerageSymbol[2], brokerageSymbol[3]);
+                    }
+                    break;
             }
         }
 
@@ -165,7 +181,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         }
 
         /// <summary>
-        /// Constructs a message for subscribing or unsubscribing to a financial instrument on a specified channel.
+        /// Constructs a message for subscribing or unsubscribing to an option contract on a specified channel.
         /// </summary>
         /// <param name="isSubscribe">A boolean value indicating whether to subscribe (true) or unsubscribe (false).</param>
         /// <param name="channelName">The name of the channel to subscribe or unsubscribe from. <see cref="Channels"/></param>
@@ -173,8 +189,8 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <param name="expirationDate">The expiration date of the option contract.</param>
         /// <param name="strikePrice">The strike price of the option contract.</param>
         /// <param name="optionRight">The option type, either "C" for call or "P" for put.</param>
-        /// <returns>A json string representing the constructed message.</returns>
-        private string GetMessage(bool isSubscribe, string channelName, string ticker, string expirationDate, string strikePrice, string optionRight)
+        /// <returns>A JSON string representing the constructed message.</returns>
+        private string GetMessageOption(bool isSubscribe, string channelName, string ticker, string? expirationDate = default, string? strikePrice = default, string? optionRight = default)
         {
             return JsonConvert.SerializeObject(new
             {
@@ -190,6 +206,35 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                     strike = strikePrice,
                     right = optionRight
                 }
+            });
+        }
+
+        /// <summary>
+        /// Constructs a message for subscribing or unsubscribing to a financial instrument on a specified channel.
+        /// </summary>
+        /// <param name="isSubscribe">A boolean value indicating whether to subscribe (true) or unsubscribe (false).</param>
+        /// <param name="channelName">The name of the channel to subscribe or unsubscribe from. <see cref="Channels"/></param>
+        /// <param name="ticker">The ticker symbol of the financial instrument.</param>
+        /// <param name="securityType">The type of the security.</param>
+        /// <returns>A JSON string representing the constructed message.</returns>
+        /// <exception cref="NotSupportedException">Thrown when the security type is not supported.</exception>
+        private string GetMessage(bool isSubscribe, string channelName, string ticker, SecurityType securityType)
+        {
+            var sec_type = securityType switch
+            {
+                SecurityType.Equity => "STOCK",
+                SecurityType.Index => "INDEX",
+                _ => throw new NotSupportedException($"{nameof(ThetaDataWebSocketClientWrapper)}.{nameof(GetMessage)}: Security type {securityType} is not supported.")
+            };
+
+            return JsonConvert.SerializeObject(new
+            {
+                msg_type = "STREAM",
+                sec_type = sec_type,
+                req_type = channelName,
+                add = isSubscribe,
+                id = _idRequestCount,
+                contract = new { root = ticker }
             });
         }
 
