@@ -69,6 +69,15 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// </remarks>
         private volatile bool _invalidIndexTickTypeWarningFired;
 
+        /// <summary>
+        /// Indicates whether a warning has been triggered for an invalid TickType request when the SecurityType is not 'Option'.
+        /// </summary>
+        /// <remarks>
+        /// This flag is set to true when a TickType of 'OpenInterest' is requested with a SecurityType other than 'Option'. 
+        /// This warning helps to prevent invalid requests since 'OpenInterest' is only supported for 'Option' security types.
+        /// </remarks>
+        private bool _invalidSecurityTypeOfOpenInterestWarningFired;
+
         /// <inheritdoc />
         public override void Initialize(HistoryProviderInitializeParameters parameters)
         { }
@@ -138,14 +147,30 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 return null;
             }
 
-            if (historyRequest.Symbol.SecurityType == SecurityType.Option && historyRequest.TickType == TickType.OpenInterest && historyRequest.Resolution != Resolution.Daily)
+            if (historyRequest.TickType == TickType.OpenInterest)
             {
-                if (!_invalidOpenInterestWarningFired)
+                if (historyRequest.Symbol.SecurityType != SecurityType.Option)
                 {
-                    _invalidOpenInterestWarningFired = true;
-                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Invalid data request: TickType 'OpenInterest' only supports Resolution 'Daily' and SecurityType 'Option'. Requested: Resolution '{historyRequest.Resolution}', SecurityType '{historyRequest.Symbol.SecurityType}'.");
+                    // Log warning only once per instance
+                    if (!_invalidSecurityTypeOfOpenInterestWarningFired)
+                    {
+                        _invalidSecurityTypeOfOpenInterestWarningFired = true;
+                        Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Invalid data request. TickType 'OpenInterest' only supports SecurityType 'Option'. Requested: Resolution '{historyRequest.Resolution}', SecurityType '{historyRequest.Symbol.SecurityType}'.");
+                    }
+                    return null;
                 }
-                return null;
+
+                // Check if the Resolution is not 'Daily' for the valid SecurityType 'Option'
+                if (historyRequest.Resolution != Resolution.Daily)
+                {
+                    // Log warning only once per instance
+                    if (!_invalidOpenInterestWarningFired)
+                    {
+                        _invalidOpenInterestWarningFired = true;
+                        Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Invalid data request. TickType 'OpenInterest' only supports Resolution 'Daily'. Requested: Resolution '{historyRequest.Resolution}', SecurityType '{historyRequest.Symbol.SecurityType}'.");
+                    }
+                    return null;
+                }
             }
 
             if (historyRequest.Symbol.SecurityType == SecurityType.Index && historyRequest.TickType != TickType.Trade)

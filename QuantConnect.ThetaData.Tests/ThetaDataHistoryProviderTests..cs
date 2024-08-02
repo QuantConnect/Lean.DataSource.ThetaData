@@ -28,8 +28,10 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
 
         [TestCase("AAPL", SecurityType.Option, Resolution.Hour, TickType.OpenInterest, "2024/03/18", "2024/03/28", Description = "Wrong Resolution for OpenInterest")]
         [TestCase("AAPL", SecurityType.Option, Resolution.Hour, TickType.OpenInterest, "2024/03/28", "2024/03/18", Description = "StartDate > EndDate")]
-        [TestCase("AAPL", SecurityType.Equity, Resolution.Hour, TickType.OpenInterest, "2024/03/28", "2024/03/18", Description = "Wrong SecurityType")]
+        [TestCase("AAPL", SecurityType.Equity, Resolution.Hour, TickType.OpenInterest, "2024/03/28", "2024/04/02", Description = "Wrong TickType")]
         [TestCase("AAPL", SecurityType.FutureOption, Resolution.Hour, TickType.Trade, "2024/03/28", "2024/03/18", Description = "Wrong SecurityType")]
+        [TestCase("SPY", SecurityType.Index, Resolution.Hour, TickType.OpenInterest, "2024/03/28", "2024/04/02", Description = "Wrong TickType, Index support only Trade")]
+        [TestCase("SPY", SecurityType.Index, Resolution.Minute, TickType.Quote, "2024/03/28", "2024/04/02", Description = "Wrong TickType, Index support only Trade")]
         public void TryGetHistoryDataWithInvalidRequestedParameters(string ticker, SecurityType securityType, Resolution resolution, TickType tickType, DateTime startDate, DateTime endDate)
         {
             var symbol = TestHelpers.CreateSymbol(ticker, securityType, OptionRight.Call, 170, new DateTime(2024, 03, 28));
