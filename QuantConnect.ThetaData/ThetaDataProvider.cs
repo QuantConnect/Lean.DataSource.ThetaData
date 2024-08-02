@@ -1,4 +1,4 @@
-/*
+﻿/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -24,10 +24,12 @@ using QuantConnect.Packets;
 using QuantConnect.Logging;
 using Newtonsoft.Json.Linq;
 using QuantConnect.Interfaces;
+using QuantConnect.Brokerages;
 using QuantConnect.Data.Market;
 using QuantConnect.Configuration;
 using System.Security.Cryptography;
 using System.Net.NetworkInformation;
+using System.Collections.Concurrent;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Enums;
 using QuantConnect.Lean.DataSource.ThetaData.Models.WebSocket;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Interfaces;
@@ -87,6 +89,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// This boolean flag is used to track whether the internet connection is currently disconnected.
         /// </remarks>
         private volatile bool isInternetDisconnected;
+
+        /// <summary>
+        /// A thread-safe dictionary that stores the order books by brokerage symbols.
+        /// </summary>
+        private readonly ConcurrentDictionary<Symbol, DefaultOrderBook> _orderBooks = new();
 
         /// <summary>
         /// The time provider instance. Used for improved testability
@@ -152,6 +159,12 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             var enumerator = _dataAggregator.Add(dataConfig, newDataAvailableHandler);
             _subscriptionManager.Subscribe(dataConfig);
 
+            if (!_orderBooks.TryGetValue(dataConfig.Symbol, out var orderBook))
+            {
+                _orderBooks[dataConfig.Symbol] = new DefaultOrderBook(dataConfig.Symbol);
+                _orderBooks[dataConfig.Symbol].BestBidAskUpdated += OnBestBidAskUpdated;
+            }
+
             return enumerator;
         }
 
@@ -160,6 +173,36 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         {
             _subscriptionManager.Unsubscribe(dataConfig);
             _dataAggregator.Remove(dataConfig);
+
+            if (_orderBooks.TryRemove(dataConfig.Symbol, out var orderBook))
+            {
+                orderBook.BestBidAskUpdated -= OnBestBidAskUpdated;
+            }
+        }
+
+        /// <summary>
+        /// Handles updates to the best bid and ask prices and updates the aggregator with a new quote tick.
+        /// </summary>
+        /// <param name="sender">The source of the event.</param>
+        /// <param name="bestBidAskUpdatedEvent">The event arguments containing best bid and ask details.</param>
+        private void OnBestBidAskUpdated(object? sender, BestBidAskUpdatedEventArgs bestBidAskUpdatedEvent)
+        {
+            var tick = new Tick
+            {
+                AskPrice = bestBidAskUpdatedEvent.BestAskPrice,
+                BidPrice = bestBidAskUpdatedEvent.BestBidPrice,
+                Time = DateTime.UtcNow.ConvertFromUtc(TimeZones.EasternStandard),
+                Symbol = bestBidAskUpdatedEvent.Symbol,
+                TickType = TickType.Quote,
+                AskSize = bestBidAskUpdatedEvent.BestAskSize,
+                BidSize = bestBidAskUpdatedEvent.BestBidSize
+            };
+            tick.SetValue();
+
+            lock (_lock)
+            {
+                _dataAggregator.Update(tick);
+            }
         }
 
         /// <inheritdoc />
@@ -206,13 +249,29 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
         private void HandleQuoteMessage(Symbol symbol, WebSocketQuote webSocketQuote)
         {
-            var tick = new Tick(webSocketQuote.DateTimeMilliseconds, symbol, webSocketQuote.BidCondition.ToStringInvariant(), ThetaDataExtensions.Exchanges[webSocketQuote.BidExchange],
-            bidSize: webSocketQuote.BidSize, bidPrice: webSocketQuote.BidPrice,
-            askSize: webSocketQuote.AskSize, askPrice: webSocketQuote.AskPrice);
-
-            lock (_lock)
+            if (_orderBooks.TryGetValue(symbol, out var orderBook))
             {
-                _dataAggregator.Update(tick);
+                if (webSocketQuote.AskPrice > 0 && webSocketQuote.AskSize > 0)
+                {
+                    orderBook.UpdateAskRow(webSocketQuote.AskPrice, webSocketQuote.AskSize);
+                }
+                else if (webSocketQuote.AskSize == 0 && webSocketQuote.AskPrice != 0)
+                {
+                    orderBook.RemoveAskRow(webSocketQuote.AskPrice);
+                }
+
+                if (webSocketQuote.BidPrice > 0 && webSocketQuote.BidSize > 0)
+                {
+                    orderBook.UpdateBidRow(webSocketQuote.BidPrice, webSocketQuote.BidSize);
+                }
+                else if (webSocketQuote.BidSize == 0 && webSocketQuote.BidPrice != 0)
+                {
+                    orderBook.RemoveBidRow(webSocketQuote.BidPrice);
+                }
+            }
+            else
+            {
+                Log.Error($"{nameof(ThetaDataProvider)}.{nameof(HandleQuoteMessage)}: Symbol {symbol} not found in order books. This could indicate an unexpected symbol or a missing initialization step.");
             }
         }
 
