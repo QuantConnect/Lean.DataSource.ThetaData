@@ -92,6 +92,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             Closed += OnClosed;
             Message += OnMessage;
             Error += OnError;
+            Open += OnOpen;
         }
 
         /// <summary>
@@ -104,12 +105,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             if (!IsOpen)
             {
                 Connect();
+            }
 
-                // Ensure all previous streaming subscriptions are stopped
-                // This is crucial to avoid any conflicts or unexpected behavior from previous sessions
-                // For more details, refer to the official documentation:
-                // https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/a017d29vrw1q0-stop-all-streams
-                Send(JsonConvert.SerializeObject(new { msg_type = "STOP" }));
+            if (isReSubscribeProcess)
+            {
+                SendStopPreviousStreamingSubscriptions();
             }
 
             foreach (var symbol in symbols)
@@ -258,6 +258,27 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         private void OnClosed(object? sender, WebSocketCloseData webSocketCloseData)
         {
             Log.Trace($"{nameof(ThetaDataWebSocketClientWrapper)}.{nameof(OnClosed)}: {webSocketCloseData.Reason}");
+        }
+
+        /// <summary>
+        /// Event handler for processing WebSocket open events.
+        /// </summary>
+        /// <param name="sender">The object that raised the event.</param>
+        /// <param name="e">The event data associated with the open event.</param>
+        private void OnOpen(object? sender, EventArgs e)
+        {
+            SendStopPreviousStreamingSubscriptions();
+        }
+
+        /// <summary>
+        /// Sends a request to stop all previous streaming subscriptions.
+        /// This is crucial to avoid any conflicts or unexpected behavior from previous sessions.
+        /// For more details, refer to the official documentation:
+        /// https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/a017d29vrw1q0-stop-all-streams
+        /// </summary>
+        private void SendStopPreviousStreamingSubscriptions()
+        {
+            Send(JsonConvert.SerializeObject(new { msg_type = "STOP" }));
         }
     }
 }
