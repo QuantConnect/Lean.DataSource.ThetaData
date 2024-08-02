@@ -108,8 +108,10 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                         return GetLeanSymbol(root, SecurityType.Option, MARKET, dataProviderDate.ConvertFromThetaDataDateFormat(), strike, ConvertContractOptionRightFromThetaDataFormat(right));
                     case ContractSecurityType.Equity:
                         return GetLeanSymbol(root, SecurityType.Equity, MARKET);
+                    case ContractSecurityType.Index:
+                        return GetLeanSymbol(root, SecurityType.Index, MARKET);
                     default:
-                        throw new NotImplementedException("");
+                        throw new NotImplementedException($"{nameof(ThetaDataSymbolMapper)}.{nameof(GetLeanSymbol)}: The contract security type '{contractSecurityType}' is not implemented.");
                 }
             }
             return symbol;
@@ -211,6 +213,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             {
                 case ContractSecurityType.Option:
                     return $"{ticker},{expirationDate},{strikePrice},{optionRight}";
+                case ContractSecurityType.Index:
                 case ContractSecurityType.Equity:
                     return ticker;
                 default:
