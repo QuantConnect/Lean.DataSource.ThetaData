@@ -104,6 +104,12 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             if (!IsOpen)
             {
                 Connect();
+
+                // Ensure all previous streaming subscriptions are stopped
+                // This is crucial to avoid any conflicts or unexpected behavior from previous sessions
+                // For more details, refer to the official documentation:
+                // https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/a017d29vrw1q0-stop-all-streams
+                Send(JsonConvert.SerializeObject(new { msg_type = "STOP" }));
             }
 
             foreach (var symbol in symbols)
