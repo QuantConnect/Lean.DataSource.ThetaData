@@ -69,15 +69,16 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
                 var response = _restClient.Execute(request);
 
-                if (response == null || response.StatusCode == 0 || response.StatusCode != System.Net.HttpStatusCode.OK)
-                {
-                    throw new Exception($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: No response received for request to {request.Resource}. Error message: {response?.ErrorMessage ?? "No error message available."}");
-                }
-
                 // docs: https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/3ucp87xxgy8d3-error-codes
                 if ((int)response.StatusCode == 472)
                 {
-                    Log.Trace($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}:NO_DATA There was no data found for the specified request.");
+                    Log.Trace($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}:No data found for the specified request (Status Code: 472).");
+                    yield break;
+                }
+
+                if (response == null || response.StatusCode == 0 || response.StatusCode != System.Net.HttpStatusCode.OK)
+                {
+                    throw new Exception($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: No response received for request to {request.Resource}. Error message: {response?.ErrorMessage ?? "No error message available."}");
                 }
 
                 var res = JsonConvert.DeserializeObject<T>(response.Content);
