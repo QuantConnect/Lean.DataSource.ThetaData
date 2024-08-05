@@ -92,7 +92,19 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             Closed += OnClosed;
             Message += OnMessage;
             Error += OnError;
-            Open += OnOpen;
+        }
+
+        /// <summary>
+        /// Wraps the Close method to handle the closing of the WebSocket connection and
+        /// ensures any ongoing streaming subscriptions are stopped before closing.
+        /// </summary>
+        public new void Close()
+        {
+            if (IsOpen)
+            {
+                SendStopPreviousStreamingSubscriptions();
+                base.Close();
+            }
         }
 
         /// <summary>
@@ -105,11 +117,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             if (!IsOpen)
             {
                 Connect();
-            }
-
-            if (isReSubscribeProcess)
-            {
-                SendStopPreviousStreamingSubscriptions();
             }
 
             foreach (var symbol in symbols)
@@ -125,8 +132,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
                 foreach (var jsonMessage in GetContractSubscriptionMessage(true, symbol))
                 {
-                    Send(jsonMessage);
-                    Interlocked.Increment(ref _idRequestCount);
+                    SendMessage(jsonMessage);
                 }
             }
 
@@ -173,8 +179,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
                 foreach (var jsonMessage in GetContractSubscriptionMessage(false, symbol))
                 {
-                    Send(jsonMessage);
-                    Interlocked.Increment(ref _idRequestCount);
+                    SendMessage(jsonMessage);
                 }
             }
             return true;
@@ -261,13 +266,14 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         }
 
         /// <summary>
-        /// Event handler for processing WebSocket open events.
+        /// Wraps the send method to send a JSON message over the WebSocket connection
+        /// and increments the request count.
         /// </summary>
-        /// <param name="sender">The object that raised the event.</param>
-        /// <param name="e">The event data associated with the open event.</param>
-        private void OnOpen(object? sender, EventArgs e)
+        /// <param name="jsonMessage">The JSON message to be sent.</param>
+        private void SendMessage(string jsonMessage)
         {
-            SendStopPreviousStreamingSubscriptions();
+            Send(jsonMessage);
+            Interlocked.Increment(ref _idRequestCount);
         }
 
         /// <summary>
