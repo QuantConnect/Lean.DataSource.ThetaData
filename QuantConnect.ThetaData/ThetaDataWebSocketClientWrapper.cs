@@ -98,12 +98,12 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// Wraps the Close method to handle the closing of the WebSocket connection and
         /// ensures any ongoing streaming subscriptions are stopped before closing.
         /// </summary>
-        public new void Close()
+        public void CloseWebSocketConnection()
         {
             if (IsOpen)
             {
                 SendStopPreviousStreamingSubscriptions();
-                base.Close();
+                Close();
             }
         }
 
@@ -284,6 +284,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// </summary>
         private void SendStopPreviousStreamingSubscriptions()
         {
+            Log.Debug($"{nameof(ThetaDataWebSocketClientWrapper)}.{nameof(SendStopPreviousStreamingSubscriptions)}: Sending request to stop all previous streaming subscriptions to avoid conflicts and ensure clean state for new sessions.");
             Send(JsonConvert.SerializeObject(new { msg_type = "STOP" }));
         }
     }

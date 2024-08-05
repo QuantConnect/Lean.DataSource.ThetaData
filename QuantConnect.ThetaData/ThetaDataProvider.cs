@@ -159,7 +159,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// </summary>
         public void Dispose()
         {
-            _webSocketClient?.Close();
+            _webSocketClient?.CloseWebSocketConnection();
             _dataAggregator?.DisposeSafely();
         }
 
