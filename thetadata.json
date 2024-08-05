@@ -9,7 +9,7 @@
       "Live Trading": [0, 1, 1]
     }
   ],
-  "data-supported": ["Equity Options", "Index Options"],
+  "data-supported": ["Equity", "Equity Options", "Indexes", "Index Options"],
   "documentation": "/docs/v2/lean-cli/datasets/thetadata",
   "more-information": "https://www.thetadata.net/",
   "module-specification": {
@@ -27,7 +27,9 @@
         "Daily"
       ],
       "security-types": [
+        "Equity",
         "Option",
+        "Index",
         "IndexOption"
       ],
       "markets": [
