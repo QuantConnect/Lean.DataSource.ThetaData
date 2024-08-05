@@ -13,6 +13,7 @@
  * limitations under the License.
 */
 
+using NodaTime;
 using RestSharp;
 using System.Net;
 using System.Text;
@@ -96,6 +97,15 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         private readonly ConcurrentDictionary<Symbol, DefaultOrderBook> _orderBooks = new();
 
         /// <summary>
+        /// A thread-safe dictionary that maps a <see cref="Symbol"/> to a <see cref="DateTimeZone"/>.
+        /// </summary>
+        /// <remarks>
+        /// This dictionary is used to store the time zone information for each symbol in a concurrent environment,
+        /// ensuring thread safety when accessing or modifying the time zone data.
+        /// </remarks>
+        private readonly ConcurrentDictionary<Symbol, DateTimeZone> _exchangeTimeZoneByLeanSymbol = new();
+
+        /// <summary>
         /// The time provider instance. Used for improved testability
         /// </summary>
         protected virtual ITimeProvider TimeProvider { get; } = RealTimeProvider.Instance;
@@ -159,6 +169,9 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             var enumerator = _dataAggregator.Add(dataConfig, newDataAvailableHandler);
             _subscriptionManager.Subscribe(dataConfig);
 
+            var exchangeTimeZone = dataConfig.Symbol.GetSymbolExchangeTimeZone();
+            _exchangeTimeZoneByLeanSymbol[dataConfig.Symbol] = exchangeTimeZone;
+
             if (!_orderBooks.TryGetValue(dataConfig.Symbol, out var orderBook))
             {
                 _orderBooks[dataConfig.Symbol] = new DefaultOrderBook(dataConfig.Symbol);
@@ -174,6 +187,8 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             _subscriptionManager.Unsubscribe(dataConfig);
             _dataAggregator.Remove(dataConfig);
 
+            _exchangeTimeZoneByLeanSymbol.Remove(dataConfig.Symbol, out _);
+
             if (_orderBooks.TryRemove(dataConfig.Symbol, out var orderBook))
             {
                 orderBook.BestBidAskUpdated -= OnBestBidAskUpdated;
@@ -187,11 +202,16 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <param name="bestBidAskUpdatedEvent">The event arguments containing best bid and ask details.</param>
         private void OnBestBidAskUpdated(object? sender, BestBidAskUpdatedEventArgs bestBidAskUpdatedEvent)
         {
+            if (!_exchangeTimeZoneByLeanSymbol.TryGetValue(bestBidAskUpdatedEvent.Symbol, out var exchangeTimeZone))
+            {
+                return;
+            }
+
             var tick = new Tick
             {
                 AskPrice = bestBidAskUpdatedEvent.BestAskPrice,
                 BidPrice = bestBidAskUpdatedEvent.BestBidPrice,
-                Time = DateTime.UtcNow.ConvertFromUtc(TimeZones.EasternStandard),
+                Time = DateTime.UtcNow.ConvertFromUtc(exchangeTimeZone),
                 Symbol = bestBidAskUpdatedEvent.Symbol,
                 TickType = TickType.Quote,
                 AskSize = bestBidAskUpdatedEvent.BestAskSize,
@@ -241,6 +261,8 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                     break;
                 case WebSocketHeaderType.Status when json.Header.Status == "CONNECTED":
                     break;
+                case WebSocketHeaderType.Ohlc:
+                    break;
                 default:
                     Log.Debug(message);
                     break;
@@ -277,7 +299,12 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
         private void HandleTradeMessage(Symbol symbol, WebSocketTrade webSocketTrade)
         {
-            var tick = new Tick(webSocketTrade.DateTimeMilliseconds, symbol, webSocketTrade.Condition.ToStringInvariant(), ThetaDataExtensions.Exchanges[webSocketTrade.Exchange], webSocketTrade.Size, webSocketTrade.Price);
+            if (!_exchangeTimeZoneByLeanSymbol.TryGetValue(symbol, out var exchangeTimeZone))
+            {
+                return;
+            }
+
+            var tick = new Tick(DateTime.UtcNow.ConvertFromUtc(exchangeTimeZone), symbol, webSocketTrade.Condition.ToStringInvariant(), ThetaDataExtensions.Exchanges[webSocketTrade.Exchange], webSocketTrade.Size, webSocketTrade.Price);
             lock (_lock)
             {
                 _dataAggregator.Update(tick);

@@ -14,6 +14,7 @@
 */
 
 using System.Globalization;
+using QuantConnect.Securities;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
 {
@@ -62,6 +63,21 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 currentDate = nextDate;
             }
         }
+
+        /// <summary>
+        /// Retrieves the time zone of the exchange for the given symbol.
+        /// </summary>
+        /// <param name="symbol">The symbol for which to get the exchange time zone.</param>
+        /// <returns>
+        /// The <see cref="NodaTime.DateTimeZone"/> representing the time zone of the exchange
+        /// where the given symbol is traded.
+        /// </returns>
+        /// <remarks>
+        /// This method uses the <see cref="MarketHoursDatabase"/> to fetch the exchange hours
+        /// and extract the time zone information for the provided symbol.
+        /// </remarks>
+        public static NodaTime.DateTimeZone GetSymbolExchangeTimeZone(this Symbol symbol)
+            => MarketHoursDatabase.FromDataFolder().GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType).TimeZone;
 
         /// <summary>
         /// Represents a collection of Exchanges with their corresponding numerical codes.
