@@ -51,9 +51,9 @@ public readonly struct WebSocketTrade
     public DateTime DateTimeMilliseconds { get => Date.AddMilliseconds(TimeMilliseconds); }
 
     [JsonConstructor]
-    public WebSocketTrade(int dayTimeMilliseconds, int sequence, int size, int condition, decimal price, byte exchange, DateTime date)
+    public WebSocketTrade(int timeMilliseconds, int sequence, int size, int condition, decimal price, byte exchange, DateTime date)
     {
-        TimeMilliseconds = dayTimeMilliseconds;
+        TimeMilliseconds = timeMilliseconds;
         Sequence = sequence;
         Size = size;
         Condition = condition;
