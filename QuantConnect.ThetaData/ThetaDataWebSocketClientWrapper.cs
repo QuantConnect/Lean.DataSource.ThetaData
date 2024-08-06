@@ -195,7 +195,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <param name="strikePrice">The strike price of the option contract.</param>
         /// <param name="optionRight">The option type, either "C" for call or "P" for put.</param>
         /// <returns>A JSON string representing the constructed message.</returns>
-        private string GetMessageOption(bool isSubscribe, string channelName, string ticker, string? expirationDate = default, string? strikePrice = default, string? optionRight = default)
+        private string GetMessageOption(bool isSubscribe, string channelName, string ticker, string expirationDate, string strikePrice, string optionRight)
         {
             return JsonConvert.SerializeObject(new
             {
