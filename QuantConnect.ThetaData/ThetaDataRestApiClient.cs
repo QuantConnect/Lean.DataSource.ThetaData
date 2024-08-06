@@ -28,9 +28,18 @@ namespace QuantConnect.Lean.DataSource.ThetaData
     public class ThetaDataRestApiClient
     {
         /// <summary>
+        /// Represents the API version used in the REST API endpoints.
+        /// </summary>
+        /// <remarks>
+        /// This constant defines the version of the API to be used in requests. 
+        /// It is appended to the base URL to form the complete endpoint path.
+        /// </remarks>
+        private const string ApiVersion = "/v2";
+
+        /// <summary>
         /// Represents the base URL for the REST API.
         /// </summary>
-        private readonly string RestApiBaseUrl = Config.Get("thetadata-rest-url", "http://127.0.0.1:25510/v2");
+        private readonly string RestApiBaseUrl = Config.Get("thetadata-rest-url", "http://127.0.0.1:25510");
 
         /// <summary>
         /// Represents a client for making RESTFul API requests.
@@ -61,6 +70,8 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <exception cref="Exception">Thrown when an error occurs during the execution of the request or when the response is invalid.</exception>
         public IEnumerable<T?> ExecuteRequest<T>(RestRequest? request) where T : IBaseResponse
         {
+            request.Resource = ApiVersion + request.Resource;
+
             while (request != null)
             {
                 Log.Debug($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: URI: {_restClient.BuildUri(request)}");
@@ -85,7 +96,14 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
                 yield return res;
 
-                request = res?.Header.NextPage == null ? null : new RestRequest(res.Header.NextPage, Method.GET);
+                var nextPage = res?.Header.NextPage == null ? null : new Uri(res.Header.NextPage);
+
+                request = null;
+
+                if (nextPage != null)
+                {
+                    request = new RestRequest(Method.GET) { Resource = nextPage.AbsolutePath };
+                }
             };
         }
     }
