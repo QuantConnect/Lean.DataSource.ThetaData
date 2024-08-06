@@ -30,12 +30,12 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
     public static class TestHelpers
     {
         /// <summary>
-        /// Represents the time zone used by ThetaData, which returns time in the Eastern Time (ET) Time Zone.
+        /// Represents the time zone used by ThetaData, which returns time in the New York (EST) Time Zone with daylight savings time.
         /// </summary>
         /// <remarks>
         /// <see href="https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/ke230k18g7fld-trading-hours"/>
         /// </remarks>
-        private static DateTimeZone TimeZoneThetaData = TimeZones.EasternStandard;
+        private static DateTimeZone TimeZoneThetaData = TimeZones.NewYork;
 
         public static void ValidateHistoricalBaseData(IEnumerable<BaseData> history, Resolution resolution, TickType tickType, DateTime startDate, DateTime endDate, Symbol requestedSymbol = null)
         {
