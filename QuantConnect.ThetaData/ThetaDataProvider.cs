@@ -175,9 +175,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 return null;
             }
 
-            var enumerator = _dataAggregator.Add(dataConfig, newDataAvailableHandler);
-            _subscriptionManager.Subscribe(dataConfig);
-
             var exchangeTimeZone = dataConfig.Symbol.GetSymbolExchangeTimeZone();
             _exchangeTimeZoneByLeanSymbol[dataConfig.Symbol] = exchangeTimeZone;
 
@@ -186,6 +183,9 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 _orderBooks[dataConfig.Symbol] = new DefaultOrderBook(dataConfig.Symbol);
                 _orderBooks[dataConfig.Symbol].BestBidAskUpdated += OnBestBidAskUpdated;
             }
+
+            var enumerator = _dataAggregator.Add(dataConfig, newDataAvailableHandler);
+            _subscriptionManager.Subscribe(dataConfig);
 
             return enumerator;
         }
