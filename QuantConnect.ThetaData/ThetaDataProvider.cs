@@ -46,27 +46,27 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <summary>
         /// Aggregates ticks and bars based on given subscriptions.
         /// </summary>
-        private readonly IDataAggregator _dataAggregator;
+        private IDataAggregator _dataAggregator;
 
         /// <summary>
         /// Provides the TheData mapping between Lean symbols and brokerage specific symbols.
         /// </summary>
-        private readonly ThetaDataSymbolMapper _symbolMapper;
+        private ThetaDataSymbolMapper _symbolMapper;
 
         /// <summary>
         /// Helper class is doing to subscribe / unsubscribe process.
         /// </summary>
-        private readonly EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
+        private EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
 
         /// <summary>
         /// Represents an instance of a WebSocket client wrapper for ThetaData.net.
         /// </summary>
-        private readonly ThetaDataWebSocketClientWrapper _webSocketClient;
+        private ThetaDataWebSocketClientWrapper _webSocketClient;
 
         /// <summary>
         /// Represents a client for interacting with the Theta Data REST API by sending HTTP requests.
         /// </summary>
-        private readonly ThetaDataRestApiClient _restApiClient;
+        private ThetaDataRestApiClient _restApiClient;
 
         /// <summary>
         /// Ensures thread-safe synchronization when updating aggregation tick data, such as quotes or trades.
@@ -82,6 +82,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// Indicates whether the user's subscription plan allows access to real-time updates on quote and trade channels.
         /// </summary>
         private bool _streamingAvailable = false;
+
+        /// <summary>
+        /// Indicates whether the initialization process has been completed successfully.
+        /// </summary>
+        private bool _initialized;
 
         /// <summary>
         /// Represents the current state of internet connectivity.
@@ -116,28 +121,27 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <summary>
         /// Initializes a new instance of the <see cref="ThetaDataProvider"/>
         /// </summary>
-        public ThetaDataProvider()
+        public ThetaDataProvider() : this(Config.Get("thetadata-subscription-plan"))
+        { }
+
+        /// <summary>
+        /// Initializes a new instance of the <see cref="ThetaDataProvider"/> class with the specified price plan.
+        /// </summary>
+        /// <param name="pricePlan">The price plan for the Theta Data Provider. This parameter is required to initialize the provider.</param>
+        /// <remarks>
+        /// If the <paramref name="pricePlan"/> is null, empty, or consists only of white-space characters, 
+        /// the initialization will be aborted, as a valid price plan is necessary for the provider's functionality.
+        /// </remarks>
+        public ThetaDataProvider(string pricePlan)
         {
-            _dataAggregator = Composer.Instance.GetPart<IDataAggregator>();
-            if (_dataAggregator == null)
+            if (string.IsNullOrWhiteSpace(pricePlan))
             {
-                _dataAggregator =
-                    Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(Config.Get("data-aggregator", "QuantConnect.Lean.Engine.DataFeeds.AggregationManager"), forceTypeNameOnExisting: false);
+                // If the Price Plan is not provided, we can't do anything.
+                // The handler might going to be initialized using a node packet job.
+                return;
             }
 
-            _userSubscriptionPlan = GetUserSubscriptionPlan();
-
-            _restApiClient = new ThetaDataRestApiClient(_userSubscriptionPlan.RateGate!);
-            _symbolMapper = new ThetaDataSymbolMapper();
-
-            _optionChainProvider = new ThetaDataOptionChainProvider(_symbolMapper, _restApiClient);
-
-            _webSocketClient = new ThetaDataWebSocketClientWrapper(_symbolMapper, _userSubscriptionPlan.MaxStreamingContracts, OnMessage, OnError);
-            _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
-            _subscriptionManager.SubscribeImpl += (symbols, _) => _webSocketClient.Subscribe(symbols);
-            _subscriptionManager.UnsubscribeImpl += (symbols, _) => _webSocketClient.Unsubscribe(symbols);
-
-            ValidateSubscription();
+            Initialize(pricePlan);
         }
 
         /// <summary>
@@ -230,9 +234,23 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             }
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Sets the job we're subscribing for
+        /// </summary>
+        /// <param name="job">Job we're subscribing for</param>
         public void SetJob(LiveNodePacket job)
         {
+            if (_initialized)
+            {
+                return;
+            }
+
+            if (!job.BrokerageData.TryGetValue("thetadata-subscription-plan", out var pricePlan))
+            {
+                throw new ArgumentException($"{nameof(ThetaDataProvider)}.{nameof(SetJob)}: The ThetaData subscription plan is missed from the BrokerageData Live data.");
+            }
+
+            Initialize(pricePlan);
         }
 
         private void OnMessage(string message)
@@ -330,15 +348,17 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         }
 
         /// <summary>
-        /// Retrieves the subscription plan associated with the current user.
+        /// Retrieves the subscription plan associated with the current user based on the provided price plan.
         /// </summary>
+        /// <param name="pricePlan">The price plan for the user's subscription. If not provided, defaults to 'Free'.</param>
         /// <returns>
         /// An instance of the <see cref="ISubscriptionPlan"/> interface representing the subscription plan of the user.
         /// </returns>
-        private ISubscriptionPlan GetUserSubscriptionPlan()
+        private ISubscriptionPlan GetUserSubscriptionPlan(string pricePlan)
         {
-            if (!Config.TryGetValue<string>("thetadata-subscription-plan", out var pricePlan) || string.IsNullOrEmpty(pricePlan))
+            if (string.IsNullOrEmpty(pricePlan))
             {
+                Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetUserSubscriptionPlan)}: No price plan provided. Defaulting to 'Free' plan.");
                 pricePlan = "Free";
             }
 
@@ -366,6 +386,40 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             }
 
             return userSubscriptionPlan;
+        }
+
+        /// <summary>
+        /// Initializes the necessary components for data aggregation, subscription management, 
+        /// API clients, and WebSocket client setup.
+        /// </summary>
+        /// <remarks>
+        /// This method sets up the data aggregator, user subscription plan, REST API client, 
+        /// symbol mapper, option chain provider, and WebSocket client wrapper. It also configures 
+        /// the subscription manager to handle subscription and unsubscription requests.
+        /// </remarks>
+        private void Initialize(string pricePlan)
+        {
+            _dataAggregator = Composer.Instance.GetPart<IDataAggregator>();
+            if (_dataAggregator == null)
+            {
+                _dataAggregator =
+                    Composer.Instance.GetExportedValueByTypeName<IDataAggregator>(Config.Get("data-aggregator", "QuantConnect.Lean.Engine.DataFeeds.AggregationManager"), forceTypeNameOnExisting: false);
+            }
+
+            _userSubscriptionPlan = GetUserSubscriptionPlan(pricePlan);
+            _initialized = true;
+
+            _restApiClient = new ThetaDataRestApiClient(_userSubscriptionPlan.RateGate!);
+            _symbolMapper = new ThetaDataSymbolMapper();
+
+            _optionChainProvider = new ThetaDataOptionChainProvider(_symbolMapper, _restApiClient);
+
+            _webSocketClient = new ThetaDataWebSocketClientWrapper(_symbolMapper, _userSubscriptionPlan.MaxStreamingContracts, OnMessage, OnError);
+            _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
+            _subscriptionManager.SubscribeImpl += (symbols, _) => _webSocketClient.Subscribe(symbols);
+            _subscriptionManager.UnsubscribeImpl += (symbols, _) => _webSocketClient.Unsubscribe(symbols);
+
+            ValidateSubscription();
         }
 
         private class ModulesReadLicenseRead : Api.RestResponse
