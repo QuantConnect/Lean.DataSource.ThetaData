@@ -223,7 +223,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                     request.AddQueryParameter("ivl", GetIntervalsInMilliseconds(resolution));
 
                     Func<QuoteResponse, BaseData> quoteCallback =
-                        (quote) => new Tick(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(quote.DateTimeMilliseconds, symbolExchangeTimeZone), symbol, quote.AskCondition, ThetaDataExtensions.Exchanges[quote.AskExchange], quote.BidSize, quote.BidPrice, quote.AskSize, quote.AskPrice);
+                        (quote) => new Tick(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(quote.DateTimeMilliseconds, symbolExchangeTimeZone), symbol, quote.AskCondition, quote.AskExchange.TryGetExchangeOrDefault(), quote.BidSize, quote.BidPrice, quote.AskSize, quote.AskPrice);
 
                     return GetHistoricalQuoteData(request, quoteCallback);
                 default:
@@ -306,7 +306,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 {
                     foreach (var trade in trades.Response)
                     {
-                        yield return new Tick(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(trade.DateTimeMilliseconds, symbolExchangeTimeZone), symbol, trade.Condition.ToStringInvariant(), ThetaDataExtensions.Exchanges[trade.Exchange], trade.Size, trade.Price);
+                        yield return new Tick(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(trade.DateTimeMilliseconds, symbolExchangeTimeZone), symbol, trade.Condition.ToStringInvariant(), trade.Exchange.TryGetExchangeOrDefault(), trade.Size, trade.Price);
                     }
                 }
             }

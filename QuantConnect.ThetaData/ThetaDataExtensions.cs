@@ -14,6 +14,7 @@
 */
 
 using System.Globalization;
+using QuantConnect.Logging;
 using QuantConnect.Securities;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
@@ -80,9 +81,29 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             => MarketHoursDatabase.FromDataFolder().GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType).TimeZone;
 
         /// <summary>
+        /// Attempts to get the exchange name corresponding to the given exchange number.
+        /// </summary>
+        /// <param name="exchangeNumber">The numerical code of the exchange.</param>
+        /// <returns>
+        /// The name of the exchange if found; otherwise, an empty string.
+        /// </returns>
+        /// <remarks>
+        /// Logs an error if the exchange number is not found in the dictionary.
+        /// </remarks>
+        public static string TryGetExchangeOrDefault(this byte exchangeNumber)
+        {
+            if (Exchanges.TryGetValue(exchangeNumber, out var exchange))
+            {
+                return exchange;
+            }
+            Log.Error($"{nameof(ThetaDataExtensions)}.{nameof(TryGetExchangeOrDefault)}: Exchange number {exchangeNumber} not found.");
+            return string.Empty;
+        }
+
+        /// <summary>
         /// Represents a collection of Exchanges with their corresponding numerical codes.
         /// </summary>
-        public static Dictionary<byte, string> Exchanges = new()
+        private static Dictionary<byte, string> Exchanges = new()
         {
             { 1, "NQEX" },
             { 2, "NQAD" },

@@ -327,7 +327,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 return;
             }
 
-            var tick = new Tick(DateTime.UtcNow.ConvertFromUtc(exchangeTimeZone), symbol, webSocketTrade.Condition.ToStringInvariant(), ThetaDataExtensions.Exchanges[webSocketTrade.Exchange], webSocketTrade.Size, webSocketTrade.Price);
+            var tick = new Tick(DateTime.UtcNow.ConvertFromUtc(exchangeTimeZone), symbol, webSocketTrade.Condition.ToStringInvariant(), webSocketTrade.Exchange.TryGetExchangeOrDefault(), webSocketTrade.Size, webSocketTrade.Price);
             lock (_lock)
             {
                 _dataAggregator.Update(tick);
