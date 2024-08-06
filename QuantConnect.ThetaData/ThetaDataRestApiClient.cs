@@ -57,7 +57,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <param name="subscriptionPlan">User's ThetaData subscription price plan.</param>
         public ThetaDataRestApiClient(RateGate rateGate)
         {
-            _restClient = new RestClient(RestApiBaseUrl);
+            _restClient = new RestClient(RestApiBaseUrl + ApiVersion);
             _rateGate = rateGate;
         }
 
@@ -70,8 +70,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <exception cref="Exception">Thrown when an error occurs during the execution of the request or when the response is invalid.</exception>
         public IEnumerable<T?> ExecuteRequest<T>(RestRequest? request) where T : IBaseResponse
         {
-            request.Resource = ApiVersion + request.Resource;
-
             while (request != null)
             {
                 Log.Debug($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: URI: {_restClient.BuildUri(request)}");
@@ -102,7 +100,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
                 if (nextPage != null)
                 {
-                    request = new RestRequest(Method.GET) { Resource = nextPage.AbsolutePath };
+                    request = new RestRequest(Method.GET) { Resource = nextPage.AbsolutePath.Replace(ApiVersion, string.Empty) };
                 }
             };
         }
