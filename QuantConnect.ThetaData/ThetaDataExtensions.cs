@@ -14,11 +14,18 @@
 */
 
 using System.Globalization;
+using QuantConnect.Logging;
+using QuantConnect.Securities;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
 {
     public static class ThetaDataExtensions
     {
+        /// <summary>
+        /// Indicates whether the exchange message error has been fired.
+        /// </summary>
+        private static bool _isExchangeMessageFired;
+
         /// <summary>
         /// Converts a date string from Theta data format (yyyyMMdd) to a DateTime object.
         /// </summary>
@@ -34,9 +41,78 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         public static string ConvertToThetaDataDateFormat(this DateTime date) => date.ToStringInvariant(DateFormat.EightCharacter);
 
         /// <summary>
+        /// Generates date ranges with each range covering a specified number of days from the specified <paramref name="startDate"/> to <paramref name="endDate"/>.
+        /// </summary>
+        /// <param name="startDate">The starting date (inclusive) of the date range.</param>
+        /// <param name="endDate">The ending date (exclusive) of the date range.</param>
+        /// <param name="intervalDays">The number of days each date range should cover.</param>
+        /// <returns>An enumerable sequence of tuples where each tuple contains a start date (inclusive) and end date (exclusive) covering the specified number of days.</returns>
+        /// <remarks>
+        /// <see href="https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/d1g9022y8z6sb-request-sizing"/>
+        /// <para>
+        /// Best Practices for request interval size and duration:
+        /// Making large requests is often times inefficient and can lead to out of memory errors.
+        /// Recommended date range limit for each type of resolution / asset class is under 1 million ticks.
+        /// Going over the recommended date range may cause client or server side out of memory errors.
+        /// </para>
+        /// </remarks>
+        public static IEnumerable<(DateTime startDate, DateTime endDate)> GenerateDateRangesWithInterval(DateTime startDate, DateTime endDate, int intervalDays = 1)
+        {
+            DateTime currentDate = startDate;
+
+            while (currentDate < endDate)
+            {
+                DateTime nextDate = currentDate.AddDays(intervalDays);
+                yield return (currentDate, nextDate);
+
+                // Move to the next interval
+                currentDate = nextDate;
+            }
+        }
+
+        /// <summary>
+        /// Retrieves the time zone of the exchange for the given symbol.
+        /// </summary>
+        /// <param name="symbol">The symbol for which to get the exchange time zone.</param>
+        /// <returns>
+        /// The <see cref="NodaTime.DateTimeZone"/> representing the time zone of the exchange
+        /// where the given symbol is traded.
+        /// </returns>
+        /// <remarks>
+        /// This method uses the <see cref="MarketHoursDatabase"/> to fetch the exchange hours
+        /// and extract the time zone information for the provided symbol.
+        /// </remarks>
+        public static NodaTime.DateTimeZone GetSymbolExchangeTimeZone(this Symbol symbol)
+            => MarketHoursDatabase.FromDataFolder().GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType).TimeZone;
+
+        /// <summary>
+        /// Attempts to get the exchange name corresponding to the given exchange number.
+        /// </summary>
+        /// <param name="exchangeNumber">The numerical code of the exchange.</param>
+        /// <returns>
+        /// The name of the exchange if found; otherwise, an empty string.
+        /// </returns>
+        /// <remarks>
+        /// Logs an error if the exchange number is not found in the dictionary.
+        /// </remarks>
+        public static string TryGetExchangeOrDefault(this byte exchangeNumber)
+        {
+            if (Exchanges.TryGetValue(exchangeNumber, out var exchange))
+            {
+                return exchange;
+            }
+            if (!_isExchangeMessageFired)
+            {
+                _isExchangeMessageFired = true;
+                Log.Error($"{nameof(ThetaDataExtensions)}.{nameof(TryGetExchangeOrDefault)}: Exchange number {exchangeNumber} not found.");
+            }
+            return string.Empty;
+        }
+
+        /// <summary>
         /// Represents a collection of Exchanges with their corresponding numerical codes.
         /// </summary>
-        public static Dictionary<byte, string> Exchanges = new()
+        private static Dictionary<byte, string> Exchanges = new()
         {
             { 1, "NQEX" },
             { 2, "NQAD" },

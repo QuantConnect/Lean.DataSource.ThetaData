@@ -25,6 +25,9 @@ public enum ContractSecurityType
     [EnumMember(Value = "OPTION")]
     Option = 0,
 
-    [EnumMember(Value = "EQUITY")]
+    [EnumMember(Value = "STOCK")]
     Equity = 1,
+
+    [EnumMember(Value = "INDEX")]
+    Index = 2
 }

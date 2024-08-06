@@ -16,49 +16,47 @@
 using Newtonsoft.Json;
 using QuantConnect.Lean.DataSource.ThetaData.Converters;
 
-namespace QuantConnect.Lean.DataSource.ThetaData.Models.WebSocket;
+namespace QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
 
-public readonly struct WebSocketTrade
+/// <summary>
+/// Represents a response containing price response data.
+/// </summary>
+[JsonConverter(typeof(ThetaDataPriceConverter))]
+public readonly struct PriceResponse
 {
-    [JsonProperty("ms_of_day")]
-    public int TimeMilliseconds { get; }
+    /// <summary>
+    /// Gets the time at which open interest was reported, represented in milliseconds since 00:00:00.000 (midnight) Eastern Time (ET).
+    /// </summary>
+    public uint TimeMilliseconds { get; }
 
-    [JsonProperty("sequence")]
-    public int Sequence { get; }
-
-    [JsonProperty("size")]
-    public int Size { get; }
-
-    [JsonProperty("condition")]
-    public int Condition { get; }
-
-    [JsonProperty("price")]
+    /// <summary>
+    /// The reported price of the index.
+    /// </summary>
     public decimal Price { get; }
 
-    [JsonProperty("exchange")]
-    public byte Exchange { get; }
-
-    [JsonProperty("date")]
-    [JsonConverter(typeof(DateTimeIntJsonConverter))]
+    /// <summary>
+    /// The date formatted as YYYYMMDD. (e.g. "20240328" -> 2024/03/28)
+    /// </summary>
     public DateTime Date { get; }
 
     /// <summary>
-    /// Gets the DateTime representation of the last trade time. DateTime is New York Time (EST) Time Zone!
+    /// Gets the DateTime representation of the last quote time. DateTime is New York Time (EST) Time Zone!
     /// </summary>
     /// <remarks>
     /// This property calculates the <see cref="Date"/> by adding the <seealso cref="TimeMilliseconds"/> to the Date property.
     /// </remarks>
     public DateTime DateTimeMilliseconds { get => Date.AddMilliseconds(TimeMilliseconds); }
 
-    [JsonConstructor]
-    public WebSocketTrade(int timeMilliseconds, int sequence, int size, int condition, decimal price, byte exchange, DateTime date)
+    /// <summary>
+    /// Initializes a new instance of the <see cref="PriceResponse"/> struct.
+    /// </summary>
+    /// <param name="timeMilliseconds">The milliseconds since 00:00:00.000 (midnight) Eastern Time (ET).</param>
+    /// <param name="price">The reported price of the index.</param>
+    /// <param name="date">The date formatted as YYYYMMDD.</param>
+    public PriceResponse(uint timeMilliseconds, decimal price, DateTime date)
     {
         TimeMilliseconds = timeMilliseconds;
-        Sequence = sequence;
-        Size = size;
-        Condition = condition;
         Price = price;
-        Exchange = exchange;
         Date = date;
     }
 }
