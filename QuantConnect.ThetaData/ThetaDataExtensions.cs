@@ -22,6 +22,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData
     public static class ThetaDataExtensions
     {
         /// <summary>
+        /// Indicates whether the exchange message error has been fired.
+        /// </summary>
+        private static bool _isExchangeMessageFired;
+
+        /// <summary>
         /// Converts a date string from Theta data format (yyyyMMdd) to a DateTime object.
         /// </summary>
         /// <param name="date">The date string in Theta data format (e.g., "20240303" for March 3, 2024).</param>
@@ -96,7 +101,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             {
                 return exchange;
             }
-            Log.Error($"{nameof(ThetaDataExtensions)}.{nameof(TryGetExchangeOrDefault)}: Exchange number {exchangeNumber} not found.");
+            if (!_isExchangeMessageFired)
+            {
+                _isExchangeMessageFired = true;
+                Log.Error($"{nameof(ThetaDataExtensions)}.{nameof(TryGetExchangeOrDefault)}: Exchange number {exchangeNumber} not found.");
+            }
             return string.Empty;
         }
 
