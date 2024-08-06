@@ -187,6 +187,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         {
             request.AddQueryParameter("ivl", GetIntervalsInMilliseconds(resolution));
 
+            var period = resolution.ToTimeSpan();
             foreach (var prices in _restApiClient.ExecuteRequest<BaseResponse<PriceResponse>>(request))
             {
                 if (resolution == Resolution.Tick)
@@ -201,7 +202,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 }
                 else
                 {
-                    var period = resolution.ToTimeSpan();
                     foreach (var price in prices.Response)
                     {
                         if (price.Price != 0m)
