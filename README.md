@@ -21,13 +21,38 @@ Customize the library to suit your needs with flexible configuration options.
 
 ### Symbol SecurityType Support
 #### Historical Data
-- [x] Option
+- [x] Equity
+- [x] Equity Option
+- [x] Index
+- [x] Index Option
 #### Real-time Updates
-- [x] Option
+- [x] Equity
+- [x] Equity Option
 - [x] Index - [support tickers list](https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/s1ezbyfni6rw0-index-option-tickers)
 - [x] IndexOption - [support tickers list](https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/s1ezbyfni6rw0-index-option-tickers)
 ### Backtesting and Research
 Utilize the power of QuantConnect.LEAN CLI to test and optimize your trading algorithms in both backtest and research modes.
+
+## Getting Started
+You can use the following command line arguments to launch the [LEAN CLI](https://github.com/quantConnect/Lean-cli) pip project with ThetaData. For more detailed information, refer to the [ThetaData](https://www.quantconnect.com/docs/v2/lean-cli/datasets/theta-data) documentation.
+
+### Downloading Data
+
+```
+lean data download --data-provider-historical ThetaData --data-type Trade --resolution Daily --security-type Option --ticker NVDA,AMD --start 20240303 --end 20240404 --thetadata-subscription-plan Standard
+```
+### Backtesting
+```
+lean backtest "My Project" --data-provider-historical ThetaData --thetadata-subscription-plan Standard
+```
+### Jupyter Research Notebooks
+```
+lean research "My Project" --data-provider-historical ThetaData --thetadata-subscription-plan Standard
+```
+### Live Trading
+```
+lean live deploy "My Project" --data-provider-live ThetaData --thetadata-subscription-plan Standard --brokerage "Paper Trading"
+``` 
 
 ## Contributing
 Contributions to the project are highly encouraged! Feel free to open issues, submit pull requests, or contribute in any way you see fit.
