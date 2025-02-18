@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -108,13 +108,16 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 }
                 return null;
             }
-
+            
+            var startDateTimeUtc = historyRequest.StartTimeUtc;
             if (_userSubscriptionPlan.FirstAccessDate.Date > historyRequest.StartTimeUtc.Date)
             {
                 if (!_invalidStartDateInCurrentSubscriptionWarningFired)
                 {
                     _invalidStartDateInCurrentSubscriptionWarningFired = true;
-                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: The requested start time ({historyRequest.StartTimeUtc.Date}) exceeds the maximum available date ({_userSubscriptionPlan.FirstAccessDate.Date}) allowed by the user's subscription.");
+                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: The requested start time ({historyRequest.StartTimeUtc.Date}) exceeds the maximum available date ({_userSubscriptionPlan.FirstAccessDate.Date}) allowed by the user's subscription. Using the new adjusted start date: {_userSubscriptionPlan.FirstAccessDate.Date}.");
+                    // Ensures efficient data retrieval by blocking requests outside the user's subscription period, which reduces processing overhead and avoids unnecessary data requests.
+                    startDateTimeUtc = _userSubscriptionPlan.FirstAccessDate.Date.Add(historyRequest.StartTimeUtc.TimeOfDay);
                 }
             }
 
@@ -128,7 +131,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 return null;
             }
 
-            if (historyRequest.StartTimeUtc >= historyRequest.EndTimeUtc)
+            if (startDateTimeUtc >= historyRequest.EndTimeUtc)
             {
                 if (!_invalidStartTimeWarningFired)
                 {
@@ -151,7 +154,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             var restRequest = new RestRequest(Method.GET);
 
             restRequest = GetSymbolHistoryQueryParametersBySymbol(restRequest, historyRequest.Symbol);
-            restRequest.AddQueryParameter("start_date", historyRequest.StartTimeUtc.ConvertFromUtc(TimeZoneThetaData).ConvertToThetaDataDateFormat());
+            restRequest.AddQueryParameter("start_date", startDateTimeUtc.ConvertFromUtc(TimeZoneThetaData).ConvertToThetaDataDateFormat());
             restRequest.AddQueryParameter("end_date", historyRequest.EndTimeUtc.ConvertFromUtc(TimeZoneThetaData).ConvertToThetaDataDateFormat());
             restRequest.AddOrUpdateParameter("start_time", "0", ParameterType.QueryString);
 
@@ -171,7 +174,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             switch (historyRequest.Resolution)
             {
                 case Resolution.Tick:
-                    return GetTickHistoryData(restRequest, historyRequest.Symbol, Resolution.Tick, historyRequest.TickType, historyRequest.StartTimeUtc, historyRequest.EndTimeUtc, symbolExchangeTimeZone);
+                    return GetTickHistoryData(restRequest, historyRequest.Symbol, Resolution.Tick, historyRequest.TickType, startDateTimeUtc, historyRequest.EndTimeUtc, symbolExchangeTimeZone);
                 case Resolution.Second:
                 case Resolution.Minute:
                 case Resolution.Hour:
