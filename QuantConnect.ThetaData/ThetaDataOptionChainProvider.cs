@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -79,7 +79,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             // just using quote, which is the most inclusive
             var request = new RestRequest($"/list/contracts/option/quote", Method.GET);
 
-            request.AddQueryParameter("start_date", date.ConvertToThetaDataDateFormat());
+            request.AddQueryParameter(RequestParameters.StartDate, date.ConvertToThetaDataDateFormat());
             request.AddQueryParameter("root", underlying.Value);
 
             foreach (var option in _restApiClient.ExecuteRequest<BaseResponse<QuoteListContract>>(request).SelectMany(x => x.Response))

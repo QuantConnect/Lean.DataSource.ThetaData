@@ -154,8 +154,8 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             var restRequest = new RestRequest(Method.GET);
 
             restRequest = GetSymbolHistoryQueryParametersBySymbol(restRequest, historyRequest.Symbol);
-            restRequest.AddQueryParameter("start_date", startDateTimeUtc.ConvertFromUtc(TimeZoneThetaData).ConvertToThetaDataDateFormat());
-            restRequest.AddQueryParameter("end_date", historyRequest.EndTimeUtc.ConvertFromUtc(TimeZoneThetaData).ConvertToThetaDataDateFormat());
+            restRequest.AddQueryParameter(RequestParameters.StartDate, startDateTimeUtc.ConvertFromUtc(TimeZoneThetaData).ConvertToThetaDataDateFormat());
+            restRequest.AddQueryParameter(RequestParameters.EndDate, historyRequest.EndTimeUtc.ConvertFromUtc(TimeZoneThetaData).ConvertToThetaDataDateFormat());
             restRequest.AddOrUpdateParameter("start_time", "0", ParameterType.QueryString);
 
             restRequest.Resource = GetResourceUrlHistoryData(historyRequest.Symbol.SecurityType, historyRequest.TickType, historyRequest.Resolution);
@@ -188,7 +188,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
         public IEnumerable<BaseData>? GetIndexIntradayHistoryData(RestRequest request, Symbol symbol, Resolution resolution, DateTimeZone symbolExchangeTimeZone)
         {
-            request.AddQueryParameter("ivl", GetIntervalsInMilliseconds(resolution));
+            request.AddQueryParameter(RequestParameters.IntervalInMilliseconds, GetIntervalsInMilliseconds(resolution));
 
             var period = resolution.ToTimeSpan();
             foreach (var prices in _restApiClient.ExecuteRequest<BaseResponse<PriceResponse>>(request))
@@ -223,7 +223,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 case TickType.Trade:
                     return GetHistoricalTickTradeDataByOneDayInterval(request, symbol, startDateTimeUtc, endDateTimeUtc, symbolExchangeTimeZone);
                 case TickType.Quote:
-                    request.AddQueryParameter("ivl", GetIntervalsInMilliseconds(resolution));
+                    request.AddQueryParameter(RequestParameters.IntervalInMilliseconds, GetIntervalsInMilliseconds(resolution));
 
                     Func<QuoteResponse, BaseData> quoteCallback =
                         (quote) => new Tick(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(quote.DateTimeMilliseconds, symbolExchangeTimeZone), symbol, quote.AskCondition, quote.AskExchange.TryGetExchangeOrDefault(), quote.BidSize, quote.BidPrice, quote.AskSize, quote.AskPrice);
@@ -236,7 +236,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
         public IEnumerable<BaseData>? GetIntradayHistoryData(RestRequest request, Symbol symbol, Resolution resolution, TickType tickType, DateTimeZone symbolExchangeTimeZone)
         {
-            request.AddQueryParameter("ivl", GetIntervalsInMilliseconds(resolution));
+            request.AddQueryParameter(RequestParameters.IntervalInMilliseconds, GetIntervalsInMilliseconds(resolution));
 
             var period = resolution.ToTimeSpan();
 
@@ -302,8 +302,8 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
             foreach (var dateRange in ThetaDataExtensions.GenerateDateRangesWithInterval(startDateTimeET, endDateTimeET))
             {
-                request.AddOrUpdateParameter("start_date", dateRange.startDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
-                request.AddOrUpdateParameter("end_date", dateRange.endDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
+                request.AddOrUpdateParameter(RequestParameters.StartDate, dateRange.startDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
+                request.AddOrUpdateParameter(RequestParameters.EndDate, dateRange.endDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
 
                 foreach (var trades in _restApiClient.ExecuteRequest<BaseResponse<TradeResponse>>(request))
                 {
