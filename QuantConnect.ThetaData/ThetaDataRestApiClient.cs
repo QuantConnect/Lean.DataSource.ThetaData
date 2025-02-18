@@ -18,6 +18,8 @@ using Newtonsoft.Json;
 using QuantConnect.Util;
 using QuantConnect.Logging;
 using QuantConnect.Configuration;
+using System.Collections.Concurrent;
+using QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Interfaces;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
@@ -57,8 +59,23 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <param name="subscriptionPlan">User's ThetaData subscription price plan.</param>
         public ThetaDataRestApiClient(RateGate rateGate)
         {
-            _restClient = new RestClient(RestApiBaseUrl + ApiVersion);
+            _restClient = new RestClient(RestApiBaseUrl + ApiVersion) { Timeout = 400_000 };
             _rateGate = rateGate;
+        }
+
+        /// <summary>
+        /// Executes a REST request and returns the results in parallel.
+        /// </summary>
+        /// <typeparam name="T">The type of object that implements the <see cref="IBaseResponse"/> interface.</typeparam>
+        /// <param name="request">The REST request to execute.</param>
+        /// <returns>An enumerable collection of objects that implement the <see cref="IBaseResponse"/> interface.</returns>
+        public async Task<IEnumerable<T?>> ExecuteRequest<T>(RestRequest? request) where T : IBaseResponse
+        {
+            // Call the ExecuteRequestParallelAsync method to execute requests in parallel and return results
+            var results = await ExecuteRequestParallelAsync<T>(request);
+
+            // Return the results as an IEnumerable<T?>
+            return results;
         }
 
         /// <summary>
@@ -68,7 +85,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <param name="request">The REST request to execute.</param>
         /// <returns>An enumerable collection of objects that implement the specified base response interface.</returns>
         /// <exception cref="Exception">Thrown when an error occurs during the execution of the request or when the response is invalid.</exception>
-        public IEnumerable<T?> ExecuteRequest<T>(RestRequest? request) where T : IBaseResponse
+        private IEnumerable<T?> ExecuteRequestWithPagination<T>(RestRequest? request) where T : IBaseResponse
         {
             while (request != null)
             {
@@ -76,7 +93,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
                 _rateGate?.WaitToProceed();
 
+                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
                 var response = _restClient.Execute(request);
+                stopwatch.Stop();
+
+                Log.Trace($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: Executed request to {request.Resource} in {stopwatch.Elapsed} ms with status code {response.StatusCode}");
 
                 // docs: https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/3ucp87xxgy8d3-error-codes
                 if ((int)response.StatusCode == 472)
@@ -102,7 +123,80 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 {
                     request = new RestRequest(Method.GET) { Resource = nextPage.AbsolutePath.Replace(ApiVersion, string.Empty) };
                 }
-            };
+            }
+        }
+
+        /// <summary>
+        /// Executes a REST request in parallel for multiple date ranges.
+        /// This method ensures that a maximum of 4 parallel requests are made at a time.
+        /// </summary>
+        /// <typeparam name="T">The type of object that implements the <see cref="IBaseResponse"/> interface.</typeparam>
+        /// <param name="request">The REST request to execute.</param>
+        /// <returns>An enumerable collection of objects that implement the <see cref="IBaseResponse"/> interface.</returns>
+        private async Task<IEnumerable<T?>> ExecuteRequestParallelAsync<T>(RestRequest? request) where T : IBaseResponse
+        {
+            var parameters = GetSpecificQueryParameters(request.Parameters, RequestParameters.IntervalInMilliseconds, RequestParameters.StartDate, RequestParameters.EndDate);
+
+            if (parameters.Count > 0 && parameters.TryGetValue(RequestParameters.IntervalInMilliseconds, out var intervalMilliseconds))
+            {
+                var intervalInDay = intervalMilliseconds switch
+                {
+                    "0" => 1,
+                    "1000" or "60000" => 30,
+                    "3600000" => 90,
+                    _ => throw new NotImplementedException()
+                };
+
+                var startDate = parameters[RequestParameters.StartDate].ConvertFromThetaDataDateFormat();
+                var endDate = parameters[RequestParameters.EndDate].ConvertFromThetaDataDateFormat();
+
+                var resultQueue = new ConcurrentQueue<T?>();
+
+                var dateRanges = ThetaDataExtensions.GenerateDateRangesWithInterval(startDate, endDate, intervalInDay).ToList();
+
+                var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = 4 };
+
+                Parallel.ForEach(dateRanges, parallelOptions, dateRange =>
+                {
+                    request.AddOrUpdateParameter(RequestParameters.StartDate, dateRange.startDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
+                    request.AddOrUpdateParameter(RequestParameters.EndDate, dateRange.endDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
+
+                    foreach (var ex in ExecuteRequestWithPagination<T>(request))
+                    {
+                        resultQueue.Enqueue(ex);
+                    }
+                });
+
+                return resultQueue;
+            }
+
+            return Enumerable.Empty<T?>();
+        }
+
+        /// <summary>
+        /// Extracts specific query parameters from a collection of request parameters.
+        /// </summary>
+        /// <param name="requestParameters">The collection of request parameters.</param>
+        /// <param name="findingParamNames">The parameter names to find.</param>
+        /// <returns>A dictionary of the matching query parameters and their values.</returns>
+        /// <exception cref="ArgumentException">Thrown when a required parameter is missing or has an invalid value.</exception>
+        private Dictionary<string, string> GetSpecificQueryParameters(IReadOnlyCollection<Parameter> requestParameters, params string[] findingParamNames)
+        {
+            var parameters = new Dictionary<string, string>(findingParamNames.Length);
+            foreach (var parameter in requestParameters)
+            {
+                if (parameter?.Name != null && findingParamNames.Contains(parameter.Name, StringComparer.InvariantCultureIgnoreCase))
+                {
+                    var value = parameter.Value?.ToString();
+                    if (string.IsNullOrEmpty(value))
+                    {
+                        throw new ArgumentException($"The value for the parameter '{parameter.Name}' is null or empty. Ensure that this parameter has a valid value.", nameof(requestParameters));
+                    }
+
+                    parameters[parameter.Name] = value;
+                }
+            }
+            return parameters;
         }
     }
 }

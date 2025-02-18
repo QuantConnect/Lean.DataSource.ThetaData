@@ -1,4 +1,4 @@
-/*
+﻿/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -82,7 +82,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             request.AddQueryParameter(RequestParameters.StartDate, date.ConvertToThetaDataDateFormat());
             request.AddQueryParameter("root", underlying.Value);
 
-            foreach (var option in _restApiClient.ExecuteRequest<BaseResponse<QuoteListContract>>(request).SelectMany(x => x.Response))
+            foreach (var option in _restApiClient.ExecuteRequest<BaseResponse<QuoteListContract>>(request).SynchronouslyAwaitTask().SelectMany(x => x.Response))
             {
                 yield return _symbolMapper.GetLeanSymbol(underlying.Value, optionsSecurityType, underlying.ID.Market, optionStyle,
                     option.Expiry, option.Strike, option.Right == "C" ? OptionRight.Call : OptionRight.Put, underlying);
