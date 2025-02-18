@@ -20,8 +20,16 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Models.Interfaces;
 /// <summary>
 /// The <c>ISubscriptionPlan</c> interface defines the base structure for different price plans offered by ThetaData for users.
 /// For detailed documentation on ThetaData subscription plans, refer to the following links:
-/// <see href="https://www.thetadata.net/subscribe" /> 
-/// <see href="https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/1floxgrco3si8-us-options#historical-endpoint-access" />
+/// <list type="bullet">
+///    <item>
+///        <term>https://www.thetadata.net/subscribe</term>
+///        <description>Institutional Data Retail Pricing</description>
+///    </item>
+///    <item>
+///        <term>https://http-docs.thetadata.us/Articles/Getting-Started/Subscriptions.html#options-data</term>
+///        <description>Initial Access Date Based on Subscription Plan</description>
+///    </item>
+///</list>
 /// </summary>
 public interface ISubscriptionPlan
 {
