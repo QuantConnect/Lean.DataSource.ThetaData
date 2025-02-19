@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -20,6 +20,7 @@ using QuantConnect.Logging;
 using QuantConnect.Configuration;
 using System.Collections.Concurrent;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
+using QuantConnect.Lean.DataSource.ThetaData.Models.Wrappers;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Interfaces;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
@@ -89,35 +90,34 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
                 _rateGate?.WaitToProceed();
 
-                var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-                var response = _restClient.Execute(request);
-                stopwatch.Stop();
-
-                Log.Trace($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: Executed request to {request.Resource} in {stopwatch.Elapsed} ms with status code {response.StatusCode}");
-
-                // docs: https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/3ucp87xxgy8d3-error-codes
-                if ((int)response.StatusCode == 472)
+                using (StopwatchWrapper.StartIfEnabled($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: Executed request to {request.Resource}"))
                 {
-                    Log.Trace($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}:No data found for the specified request (Status Code: 472).");
-                    yield break;
-                }
+                    var response = _restClient.Execute(request);
 
-                if (response == null || response.StatusCode != System.Net.HttpStatusCode.OK)
-                {
-                    throw new Exception($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: No response received for request to {request.Resource}. Error message: {response?.ErrorMessage ?? "No error message available."}");
-                }
+                    // docs: https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/3ucp87xxgy8d3-error-codes
+                    if ((int)response.StatusCode == 472)
+                    {
+                        Log.Debug($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}:No data found for the specified request (Status Code: 472) by {response.ResponseUri}");
+                        yield break;
+                    }
 
-                var res = JsonConvert.DeserializeObject<T>(response.Content);
+                    if (response == null || response.StatusCode != System.Net.HttpStatusCode.OK)
+                    {
+                        throw new Exception($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: No response received for request to {request.Resource}. Error message: {response?.ErrorMessage ?? "No error message available."}");
+                    }
 
-                yield return res;
+                    var res = JsonConvert.DeserializeObject<T>(response.Content);
 
-                var nextPage = res?.Header.NextPage == null ? null : new Uri(res.Header.NextPage);
+                    yield return res;
 
-                request = null;
+                    var nextPage = res?.Header.NextPage == null ? null : new Uri(res.Header.NextPage);
 
-                if (nextPage != null)
-                {
-                    request = new RestRequest(Method.GET) { Resource = nextPage.AbsolutePath.Replace(ApiVersion, string.Empty) };
+                    request = null;
+
+                    if (nextPage != null)
+                    {
+                        request = new RestRequest(Method.GET) { Resource = nextPage.AbsolutePath.Replace(ApiVersion, string.Empty) };
+                    }
                 }
             }
         }
