@@ -60,7 +60,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <param name="subscriptionPlan">User's ThetaData subscription price plan.</param>
         public ThetaDataRestApiClient(RateGate rateGate)
         {
-            _restClient = new RestClient(RestApiBaseUrl + ApiVersion) { Timeout = 400_000 };
+            _restClient = new RestClient(RestApiBaseUrl + ApiVersion);
             _rateGate = rateGate;
         }
 
