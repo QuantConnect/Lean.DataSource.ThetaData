@@ -64,18 +64,14 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         }
 
         /// <summary>
-        /// Executes a REST request and returns the results in parallel.
+        /// Executes a REST request in parallel and returns the results synchronously.
         /// </summary>
         /// <typeparam name="T">The type of object that implements the <see cref="IBaseResponse"/> interface.</typeparam>
         /// <param name="request">The REST request to execute.</param>
-        /// <returns>An enumerable collection of objects that implement the <see cref="IBaseResponse"/> interface.</returns>
-        public async Task<IEnumerable<T?>> ExecuteRequest<T>(RestRequest? request) where T : IBaseResponse
+        /// <returns>A collection of objects that implement the <see cref="IBaseResponse"/> interface.</returns>
+        public IEnumerable<T?> ExecuteRequest<T>(RestRequest? request) where T : IBaseResponse
         {
-            // Call the ExecuteRequestParallelAsync method to execute requests in parallel and return results
-            var results = await ExecuteRequestParallelAsync<T>(request);
-
-            // Return the results as an IEnumerable<T?>
-            return results;
+            return Task.Run(async () => await ExecuteRequestParallelAsync<T>(request)).SynchronouslyAwaitTaskResult();
         }
 
         /// <summary>

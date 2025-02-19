@@ -191,7 +191,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             request.AddQueryParameter(RequestParameters.IntervalInMilliseconds, GetIntervalsInMilliseconds(resolution));
 
             var period = resolution.ToTimeSpan();
-            foreach (var prices in _restApiClient.ExecuteRequest<BaseResponse<PriceResponse>>(request).SynchronouslyAwaitTask())
+            foreach (var prices in _restApiClient.ExecuteRequest<BaseResponse<PriceResponse>>(request))
             {
                 if (resolution == Resolution.Tick)
                 {
@@ -286,7 +286,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
         private IEnumerable<BaseData> GetHistoricalOpenInterestData(RestRequest request, Symbol symbol, DateTimeZone symbolExchangeTimeZone)
         {
-            foreach (var openInterests in _restApiClient.ExecuteRequest<BaseResponse<OpenInterestResponse>>(request).SynchronouslyAwaitTask())
+            foreach (var openInterests in _restApiClient.ExecuteRequest<BaseResponse<OpenInterestResponse>>(request))
             {
                 foreach (var openInterest in openInterests.Response)
                 {
@@ -305,7 +305,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 request.AddOrUpdateParameter(RequestParameters.StartDate, dateRange.startDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
                 request.AddOrUpdateParameter(RequestParameters.EndDate, dateRange.endDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
 
-                foreach (var trades in _restApiClient.ExecuteRequest<BaseResponse<TradeResponse>>(request).SynchronouslyAwaitTask())
+                foreach (var trades in _restApiClient.ExecuteRequest<BaseResponse<TradeResponse>>(request))
                 {
                     foreach (var trade in trades.Response)
                     {
@@ -317,7 +317,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
         private IEnumerable<TradeBar> GetHistoricalOpenHighLowCloseData(RestRequest request, Symbol symbol, TimeSpan period, DateTimeZone symbolExchangeTimeZone)
         {
-            foreach (var trades in _restApiClient.ExecuteRequest<BaseResponse<OpenHighLowCloseResponse>>(request).SynchronouslyAwaitTask())
+            foreach (var trades in _restApiClient.ExecuteRequest<BaseResponse<OpenHighLowCloseResponse>>(request))
             {
                 foreach (var trade in trades.Response)
                 {
@@ -334,7 +334,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
         private IEnumerable<BaseData> GetHistoricalQuoteData(RestRequest request, Func<QuoteResponse, BaseData> callback)
         {
-            foreach (var quotes in _restApiClient.ExecuteRequest<BaseResponse<QuoteResponse>>(request).SynchronouslyAwaitTask())
+            foreach (var quotes in _restApiClient.ExecuteRequest<BaseResponse<QuoteResponse>>(request))
             {
                 foreach (var quote in quotes.Response)
                 {
@@ -351,7 +351,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
         private IEnumerable<BaseData>? GetHistoryEndOfDay(RestRequest request, Func<EndOfDayReportResponse, bool> validateEmptyResponse, Func<DateTime, EndOfDayReportResponse, BaseData> res)
         {
-            foreach (var endOfDays in _restApiClient.ExecuteRequest<BaseResponse<EndOfDayReportResponse>>(request).SynchronouslyAwaitTask())
+            foreach (var endOfDays in _restApiClient.ExecuteRequest<BaseResponse<EndOfDayReportResponse>>(request))
             {
                 foreach (var endOfDay in endOfDays.Response)
                 {
