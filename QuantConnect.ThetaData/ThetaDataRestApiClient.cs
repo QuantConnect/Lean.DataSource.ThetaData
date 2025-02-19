@@ -19,7 +19,6 @@ using QuantConnect.Util;
 using QuantConnect.Logging;
 using QuantConnect.Configuration;
 using System.Collections.Concurrent;
-using System.Threading.Tasks.Dataflow;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Wrappers;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Interfaces;
@@ -134,84 +133,83 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         {
             var parameters = GetSpecificQueryParameters(request.Parameters, RequestParameters.IntervalInMilliseconds, RequestParameters.StartDate, RequestParameters.EndDate);
 
-            if (parameters.Count > 0 && parameters.TryGetValue(RequestParameters.IntervalInMilliseconds, out var intervalMilliseconds))
+            if (parameters.Count != 3)
             {
-                var intervalInDay = intervalMilliseconds switch
+                var responses = new List<T?>();
+                await foreach (var response in ExecuteRequestWithPaginationAsync<T>(request))
                 {
-                    "0" => 1,
-                    "1000" or "60000" => 30,
-                    "3600000" => 90,
-                    _ => throw new NotImplementedException()
-                };
+                    responses.Add(response);
+                }
+                return responses;
+            }
 
-                var startDate = parameters[RequestParameters.StartDate].ConvertFromThetaDataDateFormat();
-                var endDate = parameters[RequestParameters.EndDate].ConvertFromThetaDataDateFormat();
+            var intervalInDay = parameters[RequestParameters.IntervalInMilliseconds] switch
+            {
+                "0" => 1,
+                "1000" or "60000" => 30,
+                "3600000" => 90,
+                _ => throw new NotImplementedException($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequestParallelAsync)}: The interval '{parameters[RequestParameters.IntervalInMilliseconds]}' is not supported.")
+            };
 
-                var resultDict = new ConcurrentDictionary<int, List<T?>>();
+            var startDate = parameters[RequestParameters.StartDate].ConvertFromThetaDataDateFormat();
+            var endDate = parameters[RequestParameters.EndDate].ConvertFromThetaDataDateFormat();
 
-                var dateRanges = ThetaDataExtensions.GenerateDateRangesWithInterval(startDate, endDate, intervalInDay).Select((range, index) => (range, index)).ToList();
+            var resultDict = new ConcurrentDictionary<int, List<T?>>();
 
-                var maxConcurrency = 4;
-                var semaphore = new SemaphoreSlim(maxConcurrency);
+            var dateRanges = ThetaDataExtensions.GenerateDateRangesWithInterval(startDate, endDate, intervalInDay).Select((range, index) => (range, index)).ToList();
 
-                var tasks = dateRanges.Select(async item =>
+            var semaphore = new SemaphoreSlim(4);
+
+            var tasks = dateRanges.Select(async item =>
+            {
+                var (dateRange, index) = item;
+                await semaphore.WaitAsync();
+
+                try
                 {
-                    var (dateRange, index) = item;
-                    await semaphore.WaitAsync();
+                    var requestClone = new RestRequest(request.Resource, request.Method);
 
-                    try
+                    foreach (var param in request.Parameters)
                     {
-                        var requestClone = new RestRequest(request.Resource, request.Method);
-
-                        foreach (var param in request.Parameters)
+                        switch (param.Name)
                         {
-                            switch (param.Name)
+                            case RequestParameters.StartDate:
+                                requestClone.AddOrUpdateParameter(RequestParameters.StartDate, dateRange.startDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
+                                break;
+                            case RequestParameters.EndDate:
+                                requestClone.AddOrUpdateParameter(RequestParameters.EndDate, dateRange.endDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
+                                break;
+                            default:
+                                requestClone.AddParameter(param);
+                                break;
+                        }
+                    }
+
+                    await foreach (var response in ExecuteRequestWithPaginationAsync<T>(requestClone))
+                    {
+                        resultDict.AddOrUpdate(
+                            index,
+                            _ => new List<T?> { response },
+                            (_, existingList) =>
                             {
-                                case RequestParameters.StartDate:
-                                    requestClone.AddOrUpdateParameter(RequestParameters.StartDate, dateRange.startDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
-                                    break;
-                                case RequestParameters.EndDate:
-                                    requestClone.AddOrUpdateParameter(RequestParameters.EndDate, dateRange.endDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
-                                    break;
-                                default:
-                                    requestClone.AddParameter(param);
-                                    break;
-                            }
-                        }
-
-                        await foreach (var response in ExecuteRequestWithPaginationAsync<T>(requestClone))
-                        {
-                            resultDict.AddOrUpdate(
-                                index,
-                                _ => new List<T?> { response },
-                                (_, existingList) =>
+                                lock (existingList)
                                 {
-                                    lock (existingList)
-                                    {
-                                        existingList.Add(response);
-                                    }
-                                    return existingList;
-                                });
-                        }
-
+                                    existingList.Add(response);
+                                }
+                                return existingList;
+                            });
                     }
-                    finally
-                    {
-                        semaphore.Release();
-                    }
-                });
 
-                await Task.WhenAll(tasks);
+                }
+                finally
+                {
+                    semaphore.Release();
+                }
+            });
 
-                return resultDict.OrderBy(kvp => kvp.Key).SelectMany(kvp => kvp.Value);
-            }
+            await Task.WhenAll(tasks);
 
-            var responses = new List<T?>();
-            await foreach (var response in ExecuteRequestWithPaginationAsync<T>(request))
-            {
-                responses.Add(response);
-            }
-            return responses;
+            return resultDict.OrderBy(kvp => kvp.Key).SelectMany(kvp => kvp.Value);
         }
 
         /// <summary>
