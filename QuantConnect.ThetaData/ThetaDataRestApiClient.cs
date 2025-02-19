@@ -83,7 +83,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <param name="request">The REST request to execute.</param>
         /// <returns>An enumerable collection of objects that implement the specified base response interface.</returns>
         /// <exception cref="Exception">Thrown when an error occurs during the execution of the request or when the response is invalid.</exception>
-        private IEnumerable<T?> ExecuteRequestWithPagination<T>(RestRequest? request) where T : IBaseResponse
+        private async IAsyncEnumerable<T?> ExecuteRequestWithPaginationAsync<T>(RestRequest? request) where T : IBaseResponse
         {
             while (request != null)
             {
@@ -93,7 +93,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
                 using (StopwatchWrapper.StartIfEnabled($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: Executed request to {request.Resource}"))
                 {
-                    var response = _restClient.Execute(request);
+                    var response = await _restClient.ExecuteAsync(request);
 
                     // docs: https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/3ucp87xxgy8d3-error-codes
                     if ((int)response.StatusCode == 472)
@@ -147,22 +147,17 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 var startDate = parameters[RequestParameters.StartDate].ConvertFromThetaDataDateFormat();
                 var endDate = parameters[RequestParameters.EndDate].ConvertFromThetaDataDateFormat();
 
-                var resultDict = new ConcurrentDictionary<int, IEnumerable<T?>>();
+                var resultDict = new ConcurrentDictionary<int, List<T?>>();
 
                 var dateRanges = ThetaDataExtensions.GenerateDateRangesWithInterval(startDate, endDate, intervalInDay).Select((range, index) => (range, index)).ToList();
 
                 var maxConcurrency = 4;
                 var semaphore = new SemaphoreSlim(maxConcurrency);
 
-                var parallelOptions = new ExecutionDataflowBlockOptions
-                {
-                    MaxDegreeOfParallelism = maxConcurrency
-                };
-
-                var tasks = dateRanges.Select(item => Task.Run(async () =>
+                var tasks = dateRanges.Select(async item =>
                 {
                     var (dateRange, index) = item;
-                    await semaphore.WaitAsync(); // Ensure no more than 4 concurrent tasks
+                    await semaphore.WaitAsync();
 
                     try
                     {
@@ -184,20 +179,39 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                             }
                         }
 
-                        resultDict[index] = ExecuteRequestWithPagination<T>(requestClone);
+                        await foreach (var response in ExecuteRequestWithPaginationAsync<T>(requestClone))
+                        {
+                            resultDict.AddOrUpdate(
+                                index,
+                                _ => new List<T?> { response },
+                                (_, existingList) =>
+                                {
+                                    lock (existingList)
+                                    {
+                                        existingList.Add(response);
+                                    }
+                                    return existingList;
+                                });
+                        }
+
                     }
                     finally
                     {
-                        semaphore.Release(); // Release the semaphore to allow another task to run
+                        semaphore.Release();
                     }
-                })).ToList();
+                });
 
                 await Task.WhenAll(tasks);
 
                 return resultDict.OrderBy(kvp => kvp.Key).SelectMany(kvp => kvp.Value);
             }
 
-            return ExecuteRequestWithPagination<T>(request);
+            var responses = new List<T?>();
+            await foreach (var response in ExecuteRequestWithPaginationAsync<T>(request))
+            {
+                responses.Add(response);
+            }
+            return responses;
         }
 
         /// <summary>

@@ -121,6 +121,9 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
         }
 
         [TestCase("SPY", SecurityType.Equity, Resolution.Hour, "1998/01/02", "2025/02/16", new[] { TickType.Quote, TickType.Trade })]
+        [TestCase("SPY", SecurityType.Equity, Resolution.Daily, "1998/01/02", "2025/02/16", new[] { TickType.Quote, TickType.Trade })]
+        [TestCase("SPY", SecurityType.Equity, Resolution.Minute, "2025/01/02", "2025/02/16", new[] { TickType.Quote, TickType.Trade })]
+        [TestCase("AAPL", SecurityType.Equity, Resolution.Hour, "1998/01/02", "2025/02/16", new[] { TickType.Quote, TickType.Trade })]
         public void GetHistoryRequestWithLongRange(string ticker, SecurityType securityType, Resolution resolution, DateTime startDate, DateTime endDate, TickType[] tickTypes)
         {
             var symbol = TestHelpers.CreateSymbol(ticker, securityType);
@@ -143,7 +146,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
                 var lastDate = history.Last().Time;
 
                 Log.Trace($"[{nameof(ThetaDataHistoryProviderTests)}] Execution completed in {stopwatch.Elapsed.TotalMinutes:F2} min | " +
-                          $"Resolution: {resolution}, TickType: {historyRequest.TickType}, Count: {history.Count}, " +
+                          $"Symbol: {historyRequest.Symbol}, Resolution: {resolution}, TickType: {historyRequest.TickType}, Count: {history.Count}, " +
                           $"First Date: {firstDate:yyyy-MM-dd HH:mm:ss}, Last Date: {lastDate:yyyy-MM-dd HH:mm:ss}");
 
                 // Ensure historical data is returned in chronological order
