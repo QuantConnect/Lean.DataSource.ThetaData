@@ -66,7 +66,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 yield return (currentDate, nextDate);
 
                 // Move to the next interval
-                currentDate = nextDate;
+                currentDate = nextDate.AddDays(1);
             }
         }
 
