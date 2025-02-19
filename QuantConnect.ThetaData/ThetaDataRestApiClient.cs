@@ -1,4 +1,4 @@
-/*
+﻿/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -19,6 +19,7 @@ using QuantConnect.Util;
 using QuantConnect.Logging;
 using QuantConnect.Configuration;
 using System.Collections.Concurrent;
+using System.Threading.Tasks.Dataflow;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Wrappers;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Interfaces;
@@ -146,27 +147,57 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 var startDate = parameters[RequestParameters.StartDate].ConvertFromThetaDataDateFormat();
                 var endDate = parameters[RequestParameters.EndDate].ConvertFromThetaDataDateFormat();
 
-                var resultQueue = new ConcurrentQueue<T?>();
+                var resultDict = new ConcurrentDictionary<int, IEnumerable<T?>>();
 
-                var dateRanges = ThetaDataExtensions.GenerateDateRangesWithInterval(startDate, endDate, intervalInDay).ToList();
+                var dateRanges = ThetaDataExtensions.GenerateDateRangesWithInterval(startDate, endDate, intervalInDay).Select((range, index) => (range, index)).ToList();
 
-                var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = 4 };
+                var maxConcurrency = 4;
+                var semaphore = new SemaphoreSlim(maxConcurrency);
 
-                Parallel.ForEach(dateRanges, parallelOptions, dateRange =>
+                var parallelOptions = new ExecutionDataflowBlockOptions
                 {
-                    request.AddOrUpdateParameter(RequestParameters.StartDate, dateRange.startDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
-                    request.AddOrUpdateParameter(RequestParameters.EndDate, dateRange.endDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
+                    MaxDegreeOfParallelism = maxConcurrency
+                };
 
-                    foreach (var ex in ExecuteRequestWithPagination<T>(request))
+                var tasks = dateRanges.Select(item => Task.Run(async () =>
+                {
+                    var (dateRange, index) = item;
+                    await semaphore.WaitAsync(); // Ensure no more than 4 concurrent tasks
+
+                    try
                     {
-                        resultQueue.Enqueue(ex);
-                    }
-                });
+                        var requestClone = new RestRequest(request.Resource, request.Method);
 
-                return resultQueue;
+                        foreach (var param in request.Parameters)
+                        {
+                            switch (param.Name)
+                            {
+                                case RequestParameters.StartDate:
+                                    requestClone.AddOrUpdateParameter(RequestParameters.StartDate, dateRange.startDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
+                                    break;
+                                case RequestParameters.EndDate:
+                                    requestClone.AddOrUpdateParameter(RequestParameters.EndDate, dateRange.endDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
+                                    break;
+                                default:
+                                    requestClone.AddParameter(param);
+                                    break;
+                            }
+                        }
+
+                        resultDict[index] = ExecuteRequestWithPagination<T>(requestClone);
+                    }
+                    finally
+                    {
+                        semaphore.Release(); // Release the semaphore to allow another task to run
+                    }
+                })).ToList();
+
+                await Task.WhenAll(tasks);
+
+                return resultDict.OrderBy(kvp => kvp.Key).SelectMany(kvp => kvp.Value);
             }
 
-            return Enumerable.Empty<T?>();
+            return ExecuteRequestWithPagination<T>(request);
         }
 
         /// <summary>
