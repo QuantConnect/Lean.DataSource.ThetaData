@@ -31,6 +31,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData
     public class ThetaDataRestApiClient
     {
         /// <summary>
+        /// The maximum number of times a failed request will be retried.
+        /// </summary>
+        private const int MaxRequestRetries = 2;
+
+        /// <summary>
         /// Represents the API version used in the REST API endpoints.
         /// </summary>
         /// <remarks>
@@ -84,6 +89,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <exception cref="Exception">Thrown when an error occurs during the execution of the request or when the response is invalid.</exception>
         private async IAsyncEnumerable<T?> ExecuteRequestWithPaginationAsync<T>(RestRequest? request) where T : IBaseResponse
         {
+            var retryCount = 0;
             while (request != null)
             {
                 Log.Debug($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: URI: {_restClient.BuildUri(request)}");
@@ -103,7 +109,12 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
                     if (response == null || response.StatusCode != System.Net.HttpStatusCode.OK)
                     {
-                        // TODO: sleep & retry once at least?
+                        if (retryCount < MaxRequestRetries)
+                        {
+                            retryCount++;
+                            await Task.Delay(1000 * retryCount).ConfigureAwait(false);
+                            continue;
+                        }
                         throw new Exception($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: No response received for request to {request.Resource}. Error message: {response?.ErrorMessage ?? "No error message available."}");
                     }
 
