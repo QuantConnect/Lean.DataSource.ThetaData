@@ -13,9 +13,9 @@
  * limitations under the License.
 */
 
+using System;
 using NUnit.Framework;
 using System.Collections.Generic;
-using System;
 
 namespace QuantConnect.Lean.DataSource.ThetaData.Tests;
 
@@ -23,7 +23,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests;
 public class ThetaDataAdditionalTests
 {
     [Test]
-    public void GenerateDateRangesWithInterval_ShouldGenerateCorrectRanges()
+    public void GenerateDateRangesWithNinetyDaysInterval()
     {
         var intervalDays = 90;
         var startDate = new DateTime(2020, 07, 18);
@@ -32,7 +32,33 @@ public class ThetaDataAdditionalTests
         var expectedRanges = new List<(DateTime startDate, DateTime endDate)>
         {
             (new DateTime(2020, 07, 18), new DateTime(2020, 10, 16)),
-            (new DateTime(2020, 10, 17), new DateTime(2021, 01, 15)),
+            (new DateTime(2020, 10, 17), new DateTime(2021, 01, 14)),
+        };
+
+        var actualRanges = new List<(DateTime startDate, DateTime endDate)>(ThetaDataExtensions.GenerateDateRangesWithInterval(startDate, endDate, intervalDays));
+
+        Assert.AreEqual(expectedRanges.Count, actualRanges.Count, "The number of ranges should match.");
+
+        for (int i = 0; i < expectedRanges.Count; i++)
+        {
+            Assert.AreEqual(expectedRanges[i].startDate, actualRanges[i].startDate, $"Start date mismatch at index {i}");
+            Assert.AreEqual(expectedRanges[i].endDate, actualRanges[i].endDate, $"End date mismatch at index {i}");
+        }
+    }
+
+    [Test]
+    public void GenerateDateRangesWithOneDayInterval()
+    {
+        var intervalDays = 1;
+
+        var startDate = new DateTime(2024, 07, 26);
+        var endDate = new DateTime(2024, 07, 30);
+
+        var expectedRanges = new List<(DateTime startDate, DateTime endDate)>
+        {
+            (new DateTime(2024, 07, 26), new DateTime(2024, 07, 27)),
+            (new DateTime(2024, 07, 28), new DateTime(2024, 07, 29)),
+            (new DateTime(2024, 07, 30), new DateTime(2024, 07, 30))
         };
 
         var actualRanges = new List<(DateTime startDate, DateTime endDate)>(ThetaDataExtensions.GenerateDateRangesWithInterval(startDate, endDate, intervalDays));
@@ -56,6 +82,6 @@ public class ThetaDataAdditionalTests
             ThetaDataExtensions.GenerateDateRangesWithInterval(startDate, endDate, 1)
         );
 
-        Assert.AreEqual(0, ranges.Count, "There should be no date ranges generated.");
+        Assert.AreEqual(1, ranges.Count, "There should be no date ranges generated.");
     }
 }

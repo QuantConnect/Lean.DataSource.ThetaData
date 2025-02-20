@@ -60,9 +60,13 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         {
             DateTime currentDate = startDate;
 
-            while (currentDate < endDate)
+            while (currentDate <= endDate)
             {
                 DateTime nextDate = currentDate.AddDays(intervalDays);
+
+                if (nextDate > endDate)
+                    nextDate = endDate;
+
                 yield return (currentDate, nextDate);
 
                 // Move to the next interval

@@ -77,7 +77,30 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <returns>A collection of objects that implement the <see cref="IBaseResponse"/> interface.</returns>
         public IEnumerable<T?> ExecuteRequest<T>(RestRequest? request) where T : IBaseResponse
         {
-            return ExecuteRequestParallelAsync<T>(request).SynchronouslyAwaitTaskResult();
+            var parameters = GetSpecificQueryParameters(request.Parameters, RequestParameters.IntervalInMilliseconds, RequestParameters.StartDate, RequestParameters.EndDate);
+
+            if (parameters.Count != 3)
+            {
+                return ExecuteRequestAsync<T>(request).SynchronouslyAwaitTaskResult();
+            }
+
+            var intervalInDay = parameters[RequestParameters.IntervalInMilliseconds] switch
+            {
+                "0" => 1,
+                "1000" or "60000" => 30,
+                "3600000" => 90,
+                _ => throw new NotImplementedException($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequestParallelAsync)}: The interval '{parameters[RequestParameters.IntervalInMilliseconds]}' is not supported.")
+            };
+
+            var startDate = parameters[RequestParameters.StartDate].ConvertFromThetaDataDateFormat();
+            var endDate = parameters[RequestParameters.EndDate].ConvertFromThetaDataDateFormat();
+
+            if ((endDate - startDate).TotalDays <= intervalInDay)
+            {
+                return ExecuteRequestAsync<T>(request).SynchronouslyAwaitTaskResult();
+            }
+
+            return ExecuteRequestParallelAsync<T>(request, startDate, endDate, intervalInDay).SynchronouslyAwaitTaskResult();
         }
 
         /// <summary>
@@ -136,37 +159,41 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         }
 
         /// <summary>
-        /// Executes a REST request in parallel for multiple date ranges.
-        /// This method ensures that a maximum of 4 parallel requests are made at a time.
+        /// Executes a REST request asynchronously and retrieves a paginated response.
         /// </summary>
-        /// <typeparam name="T">The type of object that implements the <see cref="IBaseResponse"/> interface.</typeparam>
+        /// <typeparam name="T">The type of response that implements <see cref="IBaseResponse"/>.</typeparam>
         /// <param name="request">The REST request to execute.</param>
-        /// <returns>An enumerable collection of objects that implement the <see cref="IBaseResponse"/> interface.</returns>
-        private async Task<IEnumerable<T?>> ExecuteRequestParallelAsync<T>(RestRequest? request) where T : IBaseResponse
+        /// <returns>
+        /// A task that represents the asynchronous operation, returning an <see cref="IEnumerable{T}"/> 
+        /// containing the responses received from paginated requests.
+        /// </returns>
+        private async Task<IEnumerable<T?>> ExecuteRequestAsync<T>(RestRequest? request) where T : IBaseResponse
         {
-            var parameters = GetSpecificQueryParameters(request.Parameters, RequestParameters.IntervalInMilliseconds, RequestParameters.StartDate, RequestParameters.EndDate);
-
-            if (parameters.Count != 3)
+            var responses = new List<T?>();
+            await foreach (var response in ExecuteRequestWithPaginationAsync<T>(request))
             {
-                var responses = new List<T?>();
-                await foreach (var response in ExecuteRequestWithPaginationAsync<T>(request))
-                {
-                    responses.Add(response);
-                }
-                return responses;
+                responses.Add(response);
             }
+            return responses;
+        }
 
-            var intervalInDay = parameters[RequestParameters.IntervalInMilliseconds] switch
-            {
-                "0" => 1,
-                "1000" or "60000" => 30,
-                "3600000" => 90,
-                _ => throw new NotImplementedException($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequestParallelAsync)}: The interval '{parameters[RequestParameters.IntervalInMilliseconds]}' is not supported.")
-            };
-
-            var startDate = parameters[RequestParameters.StartDate].ConvertFromThetaDataDateFormat();
-            var endDate = parameters[RequestParameters.EndDate].ConvertFromThetaDataDateFormat();
-
+        /// <summary>
+        /// Executes a REST request in parallel over multiple date ranges, ensuring efficient batch processing.
+        /// A maximum of 4 parallel requests are made at a time to avoid excessive API load.
+        /// </summary>
+        /// <typeparam name="T">The type of response that implements <see cref="IBaseResponse"/>.</typeparam>
+        /// <param name="request">The REST request to execute.</param>
+        /// <param name="startDate">The start date of the data range.</param>
+        /// <param name="endDate">The end date of the data range.</param>
+        /// <param name="intervalInDay">
+        /// The interval in days for splitting the date range into smaller requests.
+        /// </param>
+        /// <returns>
+        /// A task representing the asynchronous operation, returning an <see cref="IEnumerable{T}"/> 
+        /// containing the aggregated responses from all parallel requests.
+        /// </returns>
+        private async Task<IEnumerable<T?>> ExecuteRequestParallelAsync<T>(RestRequest? request, DateTime startDate, DateTime endDate, int intervalInDay) where T : IBaseResponse
+        {
             var resultDict = new ConcurrentDictionary<int, List<T?>>();
 
             var dateRanges = ThetaDataExtensions.GenerateDateRangesWithInterval(startDate, endDate, intervalInDay).Select((range, index) => (range, index)).ToList();
