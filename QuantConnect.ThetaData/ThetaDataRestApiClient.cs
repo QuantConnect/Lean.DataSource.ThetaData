@@ -72,7 +72,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <returns>A collection of objects that implement the <see cref="IBaseResponse"/> interface.</returns>
         public IEnumerable<T?> ExecuteRequest<T>(RestRequest? request) where T : IBaseResponse
         {
-            return Task.Run(async () => await ExecuteRequestParallelAsync<T>(request)).SynchronouslyAwaitTaskResult();
+            return ExecuteRequestParallelAsync<T>(request).SynchronouslyAwaitTaskResult();
         }
 
         /// <summary>
@@ -92,7 +92,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
                 using (StopwatchWrapper.StartIfEnabled($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: Executed request to {request.Resource}"))
                 {
-                    var response = await _restClient.ExecuteAsync(request);
+                    var response = await _restClient.ExecuteAsync(request).ConfigureAwait(false);
 
                     // docs: https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/3ucp87xxgy8d3-error-codes
                     if ((int)response.StatusCode == 472)
@@ -103,6 +103,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
                     if (response == null || response.StatusCode != System.Net.HttpStatusCode.OK)
                     {
+                        // TODO: sleep & retry once at least?
                         throw new Exception($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: No response received for request to {request.Resource}. Error message: {response?.ErrorMessage ?? "No error message available."}");
                     }
 
@@ -110,13 +111,14 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
                     yield return res;
 
-                    var nextPage = res?.Header.NextPage == null ? null : new Uri(res.Header.NextPage);
-
-                    request = null;
-
-                    if (nextPage != null)
+                    if (res?.Header.NextPage != null)
                     {
-                        request = new RestRequest(Method.GET) { Resource = nextPage.AbsolutePath.Replace(ApiVersion, string.Empty) };
+                        request = new RestRequest(Method.GET) { Resource = new Uri(res.Header.NextPage).AbsolutePath.Replace(ApiVersion, string.Empty) };
+                    }
+                    else
+                    {
+                        request = null;
+
                     }
                 }
             }
@@ -158,57 +160,34 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
             var dateRanges = ThetaDataExtensions.GenerateDateRangesWithInterval(startDate, endDate, intervalInDay).Select((range, index) => (range, index)).ToList();
 
-            var semaphore = new SemaphoreSlim(4);
-
-            var tasks = dateRanges.Select(async item =>
+            await Parallel.ForEachAsync(dateRanges, async (item, _) =>
             {
                 var (dateRange, index) = item;
-                await semaphore.WaitAsync();
+                var requestClone = new RestRequest(request.Resource, request.Method);
 
-                try
+                foreach (var param in request.Parameters)
                 {
-                    var requestClone = new RestRequest(request.Resource, request.Method);
-
-                    foreach (var param in request.Parameters)
+                    switch (param.Name)
                     {
-                        switch (param.Name)
-                        {
-                            case RequestParameters.StartDate:
-                                requestClone.AddOrUpdateParameter(RequestParameters.StartDate, dateRange.startDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
-                                break;
-                            case RequestParameters.EndDate:
-                                requestClone.AddOrUpdateParameter(RequestParameters.EndDate, dateRange.endDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
-                                break;
-                            default:
-                                requestClone.AddParameter(param);
-                                break;
-                        }
+                        case RequestParameters.StartDate:
+                            requestClone.AddOrUpdateParameter(RequestParameters.StartDate, dateRange.startDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
+                            break;
+                        case RequestParameters.EndDate:
+                            requestClone.AddOrUpdateParameter(RequestParameters.EndDate, dateRange.endDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
+                            break;
+                        default:
+                            requestClone.AddParameter(param);
+                            break;
                     }
-
-                    await foreach (var response in ExecuteRequestWithPaginationAsync<T>(requestClone))
-                    {
-                        resultDict.AddOrUpdate(
-                            index,
-                            _ => new List<T?> { response },
-                            (_, existingList) =>
-                            {
-                                lock (existingList)
-                                {
-                                    existingList.Add(response);
-                                }
-                                return existingList;
-                            });
-                    }
-
                 }
-                finally
+
+                var results = new List<T?>();
+                await foreach (var response in ExecuteRequestWithPaginationAsync<T>(requestClone))
                 {
-                    semaphore.Release();
+                    results.Add(response);
                 }
-            });
-
-            await Task.WhenAll(tasks);
-
+                resultDict[index] = results;
+            }).ConfigureAwait(false);
             return resultDict.OrderBy(kvp => kvp.Key).SelectMany(kvp => kvp.Value);
         }
 
