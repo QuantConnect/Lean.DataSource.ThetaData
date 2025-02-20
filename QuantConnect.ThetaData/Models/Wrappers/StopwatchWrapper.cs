@@ -48,9 +48,9 @@ public class StopwatchWrapper : IDisposable
     /// A <see cref="StopwatchWrapper"/> instance if debugging is enabled, 
     /// otherwise a no-op <see cref="NullDisposable"/> instance.
     /// </returns>
-    public static IDisposable StartIfEnabled(string message)
+    public static IDisposable? StartIfEnabled(string message)
     {
-        return Log.DebuggingEnabled ? new StopwatchWrapper(message) : NullDisposable.Instance;
+        return Log.DebuggingEnabled ? new StopwatchWrapper(message) : null;
     }
 
     /// <summary>
