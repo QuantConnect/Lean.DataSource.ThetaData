@@ -185,7 +185,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             switch (historyRequest.Resolution)
             {
                 case Resolution.Tick:
-                    history = GetTickHistoryData(restRequest, historyRequest.Symbol, Resolution.Tick, historyRequest.TickType, startDateTimeLocal, historyRequest.EndTimeUtc, symbolExchangeTimeZone);
+                    history = GetTickHistoryData(restRequest, historyRequest.Symbol, Resolution.Tick, historyRequest.TickType, startDateTimeUtc, historyRequest.EndTimeUtc, symbolExchangeTimeZone);
                     break;
                 case Resolution.Second:
                 case Resolution.Minute:
@@ -204,11 +204,9 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
         private IEnumerable<BaseData> FilterHistory(IEnumerable<BaseData> history, HistoryRequest request, DateTime startTimeLocal, DateTime endTimeLocal)
         {
-            Log.Trace($"FilterHistory: startTimeLocal = {startTimeLocal}, endTimeLocal = {endTimeLocal}");
             // cleaning the data before returning it back to user
             foreach (var bar in history)
             {
-                Log.Trace($"Income: Time = {bar.Time}, EndTime = {bar.Time}");
                 if (bar.Time >= startTimeLocal && bar.EndTime <= endTimeLocal)
                 {
                     if (request.ExchangeHours.IsOpen(bar.Time, bar.EndTime, request.IncludeExtendedMarketHours))
@@ -217,8 +215,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                     }
                 }
             }
-
-            Log.Trace($"InteractiveBrokersBrokerage::GetHistory(): Download completed: {request.Symbol.Value}");
         }
 
         public IEnumerable<BaseData>? GetIndexIntradayHistoryData(RestRequest request, Symbol symbol, Resolution resolution, DateTimeZone symbolExchangeTimeZone)
