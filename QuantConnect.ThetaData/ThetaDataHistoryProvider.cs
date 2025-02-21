@@ -24,6 +24,7 @@ using QuantConnect.Lean.Engine.HistoricalData;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Common;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Interfaces;
+using System.Diagnostics.Contracts;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
 {
@@ -159,8 +160,12 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             var restRequest = new RestRequest(Method.GET);
 
             restRequest = GetSymbolHistoryQueryParametersBySymbol(restRequest, historyRequest.Symbol);
-            restRequest.AddQueryParameter(RequestParameters.StartDate, startDateTimeUtc.ConvertFromUtc(TimeZoneThetaData).ConvertToThetaDataDateFormat());
-            restRequest.AddQueryParameter(RequestParameters.EndDate, historyRequest.EndTimeUtc.ConvertFromUtc(TimeZoneThetaData).ConvertToThetaDataDateFormat());
+
+            var startDateTimeLocal = startDateTimeUtc.ConvertFromUtc(TimeZoneThetaData);
+            var endDateTimeLocal = historyRequest.EndTimeUtc.ConvertFromUtc(TimeZoneThetaData);
+
+            restRequest.AddQueryParameter(RequestParameters.StartDate, startDateTimeLocal.ConvertToThetaDataDateFormat());
+            restRequest.AddQueryParameter(RequestParameters.EndDate, endDateTimeLocal.ConvertToThetaDataDateFormat());
             restRequest.AddOrUpdateParameter("start_time", "0", ParameterType.QueryString);
 
             restRequest.Resource = GetResourceUrlHistoryData(historyRequest.Symbol.SecurityType, historyRequest.TickType, historyRequest.Resolution);
@@ -176,19 +181,44 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 return GetHistoricalOpenInterestData(restRequest, historyRequest.Symbol, symbolExchangeTimeZone);
             }
 
+            var history = default(IEnumerable<BaseData>);
             switch (historyRequest.Resolution)
             {
                 case Resolution.Tick:
-                    return GetTickHistoryData(restRequest, historyRequest.Symbol, Resolution.Tick, historyRequest.TickType, startDateTimeUtc, historyRequest.EndTimeUtc, symbolExchangeTimeZone);
+                    history = GetTickHistoryData(restRequest, historyRequest.Symbol, Resolution.Tick, historyRequest.TickType, startDateTimeLocal, historyRequest.EndTimeUtc, symbolExchangeTimeZone);
+                    break;
                 case Resolution.Second:
                 case Resolution.Minute:
                 case Resolution.Hour:
-                    return GetIntradayHistoryData(restRequest, historyRequest.Symbol, historyRequest.Resolution, historyRequest.TickType, symbolExchangeTimeZone);
+                    history = GetIntradayHistoryData(restRequest, historyRequest.Symbol, historyRequest.Resolution, historyRequest.TickType, symbolExchangeTimeZone);
+                    break;
                 case Resolution.Daily:
-                    return GetDailyHistoryData(restRequest, historyRequest.Symbol, historyRequest.Resolution, historyRequest.TickType, symbolExchangeTimeZone);
+                    history = GetDailyHistoryData(restRequest, historyRequest.Symbol, historyRequest.Resolution, historyRequest.TickType, symbolExchangeTimeZone);
+                    break;
                 default:
                     throw new ArgumentException($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Invalid resolution: {historyRequest.Resolution}. Supported resolutions are Tick, Second, Minute, Hour, and Daily.");
             }
+
+            return FilterHistory(history, historyRequest, startDateTimeLocal, endDateTimeLocal);
+        }
+
+        private IEnumerable<BaseData> FilterHistory(IEnumerable<BaseData> history, HistoryRequest request, DateTime startTimeLocal, DateTime endTimeLocal)
+        {
+            Log.Trace($"FilterHistory: startTimeLocal = {startTimeLocal}, endTimeLocal = {endTimeLocal}");
+            // cleaning the data before returning it back to user
+            foreach (var bar in history)
+            {
+                Log.Trace($"Income: Time = {bar.Time}, EndTime = {bar.Time}");
+                if (bar.Time >= startTimeLocal && bar.EndTime <= endTimeLocal)
+                {
+                    if (request.ExchangeHours.IsOpen(bar.Time, bar.EndTime, request.IncludeExtendedMarketHours))
+                    {
+                        yield return bar;
+                    }
+                }
+            }
+
+            Log.Trace($"InteractiveBrokersBrokerage::GetHistory(): Download completed: {request.Symbol.Value}");
         }
 
         public IEnumerable<BaseData>? GetIndexIntradayHistoryData(RestRequest request, Symbol symbol, Resolution resolution, DateTimeZone symbolExchangeTimeZone)
@@ -273,14 +303,14 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                     return GetHistoryEndOfDay(request,
                         // If OHLC prices zero, low trading activity, empty result, low volatility.
                         (eof) => eof.Open == 0 || eof.High == 0 || eof.Low == 0 || eof.Close == 0,
-                        (tradeDateTime, eof) => new TradeBar(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(tradeDateTime, symbolExchangeTimeZone), symbol, eof.Open, eof.High, eof.Low, eof.Close, eof.Volume, period));
+                        (tradeDateTime, eof) => new TradeBar(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(tradeDateTime.Date, symbolExchangeTimeZone), symbol, eof.Open, eof.High, eof.Low, eof.Close, eof.Volume, period));
                 case TickType.Quote:
                     return GetHistoryEndOfDay(request,
                         // If Ask/Bid - prices/sizes zero, low quote activity, empty result, low volatility.
                         (eof) => eof.AskPrice == 0 || eof.AskSize == 0 || eof.BidPrice == 0 || eof.BidSize == 0,
                         (quoteDateTime, eof) =>
                         {
-                            var bar = new QuoteBar(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(quoteDateTime, symbolExchangeTimeZone), symbol, null, decimal.Zero, null, decimal.Zero, period);
+                            var bar = new QuoteBar(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(quoteDateTime.Date, symbolExchangeTimeZone), symbol, null, decimal.Zero, null, decimal.Zero, period);
                             bar.UpdateQuote(eof.BidPrice, eof.BidSize, eof.AskPrice, eof.AskSize);
                             return bar;
                         });

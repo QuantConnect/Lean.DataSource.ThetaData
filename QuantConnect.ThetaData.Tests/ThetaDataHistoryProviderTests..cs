@@ -157,5 +157,71 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
                 }
             }
         }
+
+        [TestCase("AAPL", SecurityType.Equity, Resolution.Minute, "2025/02/19", "2025/02/20", new[] { TickType.Quote, TickType.Trade })]
+        [TestCase("AAPL", SecurityType.Equity, Resolution.Minute, "2025/02/18", "2025/02/20", new[] { TickType.Quote, TickType.Trade })]
+        [TestCase("AAPL", SecurityType.Equity, Resolution.Minute, "2025/02/15", "2025/02/20", new[] { TickType.Quote, TickType.Trade })]
+        [TestCase("AAPL", SecurityType.Equity, Resolution.Minute, "2025/02/10", "2025/02/20", new[] { TickType.Quote, TickType.Trade })]
+        [TestCase("AAPL", SecurityType.Equity, Resolution.Hour, "2025/02/19", "2025/02/20", new[] { TickType.Quote, TickType.Trade })]
+        [TestCase("AAPL", SecurityType.Equity, Resolution.Hour, "2025/02/18", "2025/02/20", new[] { TickType.Quote, TickType.Trade })]
+        [TestCase("AAPL", SecurityType.Equity, Resolution.Hour, "2025/02/10", "2025/02/20", new[] { TickType.Quote, TickType.Trade })]
+        [TestCase("AAPL", SecurityType.Equity, Resolution.Hour, "2025/02/01", "2025/02/20", new[] { TickType.Quote, TickType.Trade })]
+        [TestCase("AAPL", SecurityType.Equity, Resolution.Hour, "2025/01/01", "2025/02/20", new[] { TickType.Quote, TickType.Trade })]
+        [TestCase("AAPL", SecurityType.Equity, Resolution.Daily, "2025/02/19", "2025/02/20", new[] { TickType.Quote, TickType.Trade })]
+        [TestCase("AAPL", SecurityType.Equity, Resolution.Daily, "2025/02/18", "2025/02/20", new[] { TickType.Quote, TickType.Trade })]
+        [TestCase("AAPL", SecurityType.Equity, Resolution.Daily, "2025/02/15", "2025/02/20", new[] { TickType.Quote, TickType.Trade })]
+        [TestCase("AAPL", SecurityType.Equity, Resolution.Daily, "2025/02/10", "2025/02/20", new[] { TickType.Quote, TickType.Trade })]
+        [TestCase("AAPL", SecurityType.Equity, Resolution.Daily, "2025/01/01", "2025/02/20", new[] { TickType.Quote, TickType.Trade })]
+        public void GetHistoryRequestWithCalculateAmountReturnsData(string ticker, SecurityType securityType, Resolution resolution, DateTime startDate, DateTime endDate, TickType[] tickTypes)
+        {
+            var symbol = TestHelpers.CreateSymbol(ticker, securityType);
+
+            var historyRequests = new List<HistoryRequest>();
+            foreach (var tickType in tickTypes)
+            {
+                historyRequests.Add(TestHelpers.CreateHistoryRequest(symbol, resolution, tickType, startDate, endDate, includeExtendedMarketHours: false));
+            }
+
+            foreach (var historyRequest in historyRequests)
+            {
+                var history = _thetaDataProvider.GetHistory(historyRequest).ToList();
+                //Log.Trace(string.Join("\n", history.Select(x => new { Time = x.Time, EndTime = x.EndTime, Data = x })));
+
+                int expectedAmount = CalculateExpectedHistoryAmount(historyRequest);
+
+                Assert.AreEqual(expectedAmount, history.Count, "History data count does not match expected amount.");
+            }
+        }
+
+        private int CalculateExpectedHistoryAmount(HistoryRequest request)
+        {
+            var endTime = request.EndTimeUtc.ConvertFromUtc(request.DataTimeZone);
+            var currentDate = request.StartTimeUtc.ConvertFromUtc(request.DataTimeZone);
+            int totalDataPoints = 0;
+
+            while (currentDate < endTime)
+            {
+                if (request.ExchangeHours.IsDateOpen(currentDate, request.IncludeExtendedMarketHours))
+                {
+                    int dataPointsPerDay = GetDataPointsPerDay(request.Resolution);
+                    totalDataPoints += dataPointsPerDay;
+                }
+
+                currentDate = currentDate.AddDays(1);
+            }
+
+            return totalDataPoints;
+        }
+
+        private int GetDataPointsPerDay(Resolution resolution)
+        {
+            return resolution switch
+            {
+                Resolution.Minute => 390,  // 720 minutes from 9:30 AM to 4:00 PM (Trading Hours)
+                Resolution.Hour => 7,
+                Resolution.Daily => 1,     // 1 bar per day
+                _ => throw new ArgumentOutOfRangeException(nameof(resolution), "Unsupported resolution")
+            };
+        }
     }
 }
