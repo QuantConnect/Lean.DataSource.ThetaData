@@ -174,11 +174,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
         }
 
         public static HistoryRequest CreateHistoryRequest(Symbol symbol, Resolution resolution, TickType tickType, DateTime startDateTime, DateTime endDateTime,
-            SecurityExchangeHours exchangeHours = null, DateTimeZone dataTimeZone = null)
+            SecurityExchangeHours exchangeHours = null, DateTimeZone dataTimeZone = null, bool includeExtendedMarketHours = true)
         {
             if (exchangeHours == null)
             {
-                exchangeHours = SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork);
+                exchangeHours = MarketHoursDatabase.FromDataFolder().GetExchangeHours(symbol.ID.Market, symbol, symbol.SecurityType);
             }
 
             if (dataTimeZone == null)
@@ -188,15 +188,15 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
 
             var dataType = LeanData.GetDataType(resolution, tickType);
             return new HistoryRequest(
-                startDateTime,
-                endDateTime,
+                startDateTime.ConvertToUtc(exchangeHours.TimeZone),
+                endDateTime.ConvertToUtc(exchangeHours.TimeZone),
                 dataType,
                 symbol,
                 resolution,
                 exchangeHours,
                 dataTimeZone,
-                null,
-                true,
+                resolution,
+                includeExtendedMarketHours,
                 false,
                 DataNormalizationMode.Raw,
                 tickType

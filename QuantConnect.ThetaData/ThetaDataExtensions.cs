@@ -48,7 +48,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <param name="intervalDays">The number of days each date range should cover.</param>
         /// <returns>An enumerable sequence of tuples where each tuple contains a start date (inclusive) and end date (exclusive) covering the specified number of days.</returns>
         /// <remarks>
-        /// <see href="https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/d1g9022y8z6sb-request-sizing"/>
+        /// <see href="https://http-docs.thetadata.us/Articles/Performance-And-Tuning/Request-Sizing"/>
         /// <para>
         /// Best Practices for request interval size and duration:
         /// Making large requests is often times inefficient and can lead to out of memory errors.
@@ -60,13 +60,17 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         {
             DateTime currentDate = startDate;
 
-            while (currentDate < endDate)
+            while (currentDate <= endDate)
             {
                 DateTime nextDate = currentDate.AddDays(intervalDays);
+
+                if (nextDate > endDate)
+                    nextDate = endDate;
+
                 yield return (currentDate, nextDate);
 
                 // Move to the next interval
-                currentDate = nextDate;
+                currentDate = nextDate.AddDays(1);
             }
         }
 
