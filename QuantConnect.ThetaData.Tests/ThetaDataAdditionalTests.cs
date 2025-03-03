@@ -14,7 +14,9 @@
 */
 
 using System;
+using System.Linq;
 using NUnit.Framework;
+using Microsoft.CodeAnalysis;
 using System.Collections.Generic;
 
 namespace QuantConnect.Lean.DataSource.ThetaData.Tests;
@@ -83,5 +85,48 @@ public class ThetaDataAdditionalTests
         );
 
         Assert.AreEqual(1, ranges.Count, "There should be no date ranges generated.");
+    }
+
+    [TestCase("AAPL", TickType.Trade, "2023/05/12")]
+    public void GetExpirationDateOptionContractsByTickTypeInParticularDate(string symbolUnderlyingTicker, TickType tickType, DateTime particularDate)
+    {
+        var _thetaDataProvider = new ThetaDataProvider();
+
+        var expirationDates = new List<DateTime>();
+        foreach (var expirationDate in _thetaDataProvider.GetExpirationDateOptionContractsByTickTypeInParticularDate(symbolUnderlyingTicker, tickType, particularDate))
+        {
+            Assert.IsTrue(expirationDate != default);
+            expirationDates.Add(expirationDate);
+        }
+
+        var distinctExpirationDate = expirationDates.Distinct().ToList();
+        Assert.AreEqual(expirationDates.Count, distinctExpirationDate.Count);
+    }
+
+    [TestCase("AAPL", TickType.Trade, "2023/05/12")]
+    [TestCase("AAPL", TickType.OpenInterest, "2023/11/10")]
+    public void GetHistoryVariousOptionContractExpiryDateInParticularDate(string symbolUnderlyingTicker, TickType tickType, DateTime particularDate)
+    {
+        var _thetaDataProvider = new ThetaDataProvider();
+
+        var expirationDates = _thetaDataProvider.GetExpirationDateOptionContractsByTickTypeInParticularDate(symbolUnderlyingTicker, tickType, particularDate).ToList();
+
+        var symbol = Symbol.Create(symbolUnderlyingTicker, SecurityType.Equity, Market.USA);
+        var contracts = expirationDates
+            .Select(expiryDate => Symbol.CreateOption(symbol, symbol.ID.Market, symbol.SecurityType.DefaultOptionStyle(), OptionRight.Call, 100m, expiryDate));
+
+        var historyRequests = contracts.Select(contract => TestHelpers.CreateHistoryRequest(contract, Resolution.Daily, tickType, particularDate, particularDate.AddDays(1).AddTicks(-1)));
+
+        var histories = new List<Data.BaseData>();
+        foreach (var historyRequest in historyRequests)
+        {
+            var bulkHistory = _thetaDataProvider.GetUniverseHistory(historyRequest).ToList();
+            Assert.AreEqual(bulkHistory.Count, bulkHistory.Distinct().Count());
+
+            histories.AddRange(bulkHistory);
+        }
+
+        Assert.Greater(histories.Count, 0);
+        Assert.AreEqual(histories.Count, histories.Distinct().Count());
     }
 }
