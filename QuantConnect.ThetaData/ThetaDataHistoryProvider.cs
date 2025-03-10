@@ -16,6 +16,7 @@
 using NodaTime;
 using RestSharp;
 using QuantConnect.Data;
+using QuantConnect.Util;
 using QuantConnect.Logging;
 using QuantConnect.Interfaces;
 using QuantConnect.Data.Market;
@@ -24,6 +25,7 @@ using QuantConnect.Lean.Engine.HistoricalData;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Common;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Interfaces;
+using Newtonsoft.Json.Linq;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
 {
@@ -97,62 +99,45 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             return CreateSliceEnumerableFromSubscriptions(subscriptions, sliceTimeZone);
         }
 
+        public IEnumerable<BaseData>? GetUniverseHistory(HistoryRequest historyRequest)
+        {
+            if (!ValidateHistoryRequestParameters(historyRequest, out var startDateTimeUtc))
+            {
+                return null;
+            }
+
+            var startDateTimeLocal = startDateTimeUtc.ConvertFromUtc(TimeZoneThetaData);
+            var endDateTimeLocal = historyRequest.EndTimeUtc.ConvertFromUtc(TimeZoneThetaData);
+
+            var restRequest = new RestRequest(Method.GET);
+
+            restRequest.AddQueryParameter("root", historyRequest.Symbol.Underlying.Value);
+            restRequest.AddQueryParameter("exp", historyRequest.Symbol.ID.Date.ConvertToThetaDataDateFormat());
+            restRequest.AddQueryParameter(RequestParameters.StartDate, startDateTimeLocal.ConvertToThetaDataDateFormat());
+            restRequest.AddQueryParameter(RequestParameters.EndDate, endDateTimeLocal.ConvertToThetaDataDateFormat());
+
+            var underlyingSymbol = historyRequest.Symbol.SecurityType.IsOption() ? historyRequest.Symbol.Underlying : historyRequest.Symbol;
+            var optionsSecurityType = underlyingSymbol.SecurityType == SecurityType.Index ? SecurityType.IndexOption : SecurityType.Option;
+            var optionStyle = optionsSecurityType.DefaultOptionStyle();
+            var symbolExchangeTimeZone = historyRequest.Symbol.GetSymbolExchangeTimeZone();
+
+            switch (historyRequest.TickType)
+            {
+                case TickType.Trade:
+                    restRequest.Resource = "/bulk_hist/option/eod";
+                    return GetBulkHistoryEndOfDay(restRequest, optionsSecurityType, underlyingSymbol.ID.Market, optionStyle, underlyingSymbol, symbolExchangeTimeZone, historyRequest.Resolution.ToTimeSpan());
+                case TickType.OpenInterest:
+                    restRequest.Resource = "/bulk_hist/option/open_interest";
+                    return GetBulkOpenInterest(restRequest, optionsSecurityType, underlyingSymbol.ID.Market, optionStyle, underlyingSymbol, symbolExchangeTimeZone);
+                default:
+                    throw new NotSupportedException($"{nameof(ThetaDataProvider)}.{nameof(GetUniverseHistory)}: Unsupported TickType = {historyRequest.TickType}");
+            }
+        }
+
         public IEnumerable<BaseData>? GetHistory(HistoryRequest historyRequest)
         {
-            if (!_userSubscriptionPlan.AccessibleResolutions.Contains(historyRequest.Resolution))
+            if (!ValidateHistoryRequestParameters(historyRequest, out var startDateTimeUtc))
             {
-                if (!_invalidSubscriptionResolutionRequestWarningFired)
-                {
-                    _invalidSubscriptionResolutionRequestWarningFired = true;
-                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: The current user's subscription plan does not support the requested resolution: {historyRequest.Resolution}");
-                }
-                return null;
-            }
-
-            var startDateTimeUtc = historyRequest.StartTimeUtc;
-            if (_userSubscriptionPlan.FirstAccessDate.Date > historyRequest.StartTimeUtc.Date)
-            {
-                if (!_invalidStartDateInCurrentSubscriptionWarningFired)
-                {
-                    _invalidStartDateInCurrentSubscriptionWarningFired = true;
-                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: The requested start time ({historyRequest.StartTimeUtc.Date}) exceeds the maximum available date ({_userSubscriptionPlan.FirstAccessDate.Date}) allowed by the user's subscription. Using the new adjusted start date: {_userSubscriptionPlan.FirstAccessDate.Date}.");
-                }
-                // Ensures efficient data retrieval by blocking requests outside the user's subscription period, which reduces processing overhead and avoids unnecessary data requests.
-                startDateTimeUtc = _userSubscriptionPlan.FirstAccessDate.Date;
-
-                if (startDateTimeUtc >= historyRequest.EndTimeUtc)
-                {
-                    return null;
-                }
-            }
-
-            if (!CanSubscribe(historyRequest.Symbol))
-            {
-                if (!_invalidSecurityTypeWarningFired)
-                {
-                    _invalidSecurityTypeWarningFired = true;
-                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Unsupported SecurityType '{historyRequest.Symbol.SecurityType}' for symbol '{historyRequest.Symbol}'");
-                }
-                return null;
-            }
-
-            if (startDateTimeUtc >= historyRequest.EndTimeUtc)
-            {
-                if (!_invalidStartTimeWarningFired)
-                {
-                    _invalidStartTimeWarningFired = true;
-                    Log.Error($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Error - The start date in the history request must come before the end date. No historical data will be returned.");
-                }
-                return null;
-            }
-
-            if (historyRequest.Symbol.SecurityType == SecurityType.Index && historyRequest.TickType != TickType.Trade)
-            {
-                if (!_invalidIndexTickTypeWarningFired)
-                {
-                    _invalidIndexTickTypeWarningFired = true;
-                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Request error: For Index securities, only 'Trade' TickType is supported.You requested '{historyRequest.TickType}'.");
-                }
                 return null;
             }
 
@@ -316,6 +301,66 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                         });
                 default:
                     throw new ArgumentException($"Invalid tick type: {tickType}.");
+            }
+        }
+
+        /// <summary>
+        /// Retrieves distinct expiration dates for option contracts based on the specified underlying ticker,
+        /// tick type, and date.
+        /// </summary>
+        /// <param name="symbolUnderlyingTicker">The underlying symbol for the option contracts.</param>
+        /// <param name="tickType">The type of tick data to retrieve (Trade, Quote, Open Interest).</param>
+        /// <param name="date">The specific date for which to retrieve expiration dates.</param>
+        /// <returns>A collection of unique expiration dates for the matching option contracts.</returns>
+        /// <exception cref="ArgumentException">Thrown when an unrecognized TickType is provided.</exception>
+        public IEnumerable<DateTime> GetExpirationDateOptionContractsByTickTypeInParticularDate(string symbolUnderlyingTicker, TickType tickType, DateTime date)
+        {
+            var req = tickType switch
+            {
+                TickType.Trade => "trade",
+                TickType.Quote => "quote",
+                TickType.OpenInterest => "open_interest",
+                _ => throw new ArgumentException($"{nameof(ThetaDataProvider)}.{nameof(GetExpirationDateOptionContractsByTickTypeInParticularDate)}: Unrecognized {nameof(TickType)}: {tickType}")
+            };
+
+            var restRequest = new RestRequest($"/list/contracts/option/{req}", Method.GET);
+
+            restRequest.AddQueryParameter(RequestParameters.StartDate, date.ConvertToThetaDataDateFormat());
+            restRequest.AddQueryParameter("root", symbolUnderlyingTicker);
+
+            var distinctExpirations = new HashSet<DateTime>();
+            foreach (var contracts in _restApiClient.ExecuteRequest<BaseResponse<Models.Rest.OptionContract>>(restRequest))
+            {
+                foreach (var contract in contracts.Response)
+                {
+                    if (distinctExpirations.Add(contract.Expiration))
+                    {
+                        yield return contract.Expiration;
+                    }
+                }
+            }
+        }
+
+        private IEnumerable<BaseData> GetBulkOpenInterest(RestRequest restRequest, SecurityType optionSecurityType, string market, OptionStyle optionStyle, Symbol underlyingSymbol, DateTimeZone symbolExchangeTimeZone)
+        {
+            foreach (var openInterestByContract in _restApiClient.ExecuteRequest<BaseResponse<OpenInterestBulk>>(restRequest).SelectMany(x => x.Response))
+            {
+                var optionContract = _symbolMapper.GetLeanSymbol(openInterestByContract.Contract.Root, optionSecurityType, market, optionStyle, openInterestByContract.Contract.Expiration, openInterestByContract.Contract.Strike, openInterestByContract.Contract.Right == "C" ? OptionRight.Call : OptionRight.Put, underlyingSymbol);
+
+                var openInterest = openInterestByContract.Ticks.Single();
+                yield return new OpenInterest(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(openInterest.DateTimeMilliseconds, symbolExchangeTimeZone), optionContract, openInterest.OpenInterest);
+            }
+        }
+
+        private IEnumerable<BaseData> GetBulkHistoryEndOfDay(RestRequest restRequest, SecurityType optionSecurityType, string market, OptionStyle optionStyle, Symbol underlyingSymbol, DateTimeZone symbolExchangeTimeZone, TimeSpan period)
+        {
+            foreach (var eofByContract in _restApiClient.ExecuteRequest<BaseResponse<EndOfDayBulk>>(restRequest).SelectMany(x => x.Response))
+            {
+                var optionContract = _symbolMapper.GetLeanSymbol(eofByContract.Contract.Root, optionSecurityType, market, optionStyle,
+                    eofByContract.Contract.Expiration, eofByContract.Contract.Strike, eofByContract.Contract.Right == "C" ? OptionRight.Call : OptionRight.Put, underlyingSymbol);
+
+                var eof = eofByContract.Ticks.First();
+                yield return new TradeBar(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(eof.Date, symbolExchangeTimeZone), optionContract, eof.Open, eof.High, eof.Low, eof.Close, eof.Volume, period);
             }
         }
 
@@ -621,5 +666,80 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// </remarks>
         private static DateTime ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(DateTime thetaDataDateTime, DateTimeZone symbolExchangeDateTimeZone)
             => thetaDataDateTime.ConvertTo(TimeZoneThetaData, symbolExchangeDateTimeZone);
+
+        /// <summary>
+        /// Validates the parameters of a <see cref="HistoryRequest"/> and adjusts the start date if necessary.
+        /// </summary>
+        /// <param name="historyRequest">The history request to validate.</param>
+        /// <param name="startDateTimeUtc">
+        /// The validated and potentially adjusted start time in UTC.
+        /// This will be set to the requested start time if valid,
+        /// or adjusted based on the user's subscription limits.
+        /// </param>
+        /// <returns>
+        /// <c>true</c> if the request parameters are valid; otherwise, <c>false</c>.
+        /// </returns>
+        private bool ValidateHistoryRequestParameters(HistoryRequest historyRequest, out DateTime startDateTimeUtc)
+        {
+            startDateTimeUtc = historyRequest.StartTimeUtc;
+
+            if (!_userSubscriptionPlan.AccessibleResolutions.Contains(historyRequest.Resolution))
+            {
+                if (!_invalidSubscriptionResolutionRequestWarningFired)
+                {
+                    _invalidSubscriptionResolutionRequestWarningFired = true;
+                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: The current user's subscription plan does not support the requested resolution: {historyRequest.Resolution}");
+                }
+                return false;
+            }
+
+            if (_userSubscriptionPlan.FirstAccessDate.Date > historyRequest.StartTimeUtc.Date)
+            {
+                if (!_invalidStartDateInCurrentSubscriptionWarningFired)
+                {
+                    _invalidStartDateInCurrentSubscriptionWarningFired = true;
+                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: The requested start time ({historyRequest.StartTimeUtc.Date}) exceeds the maximum available date ({_userSubscriptionPlan.FirstAccessDate.Date}) allowed by the user's subscription. Using the new adjusted start date: {_userSubscriptionPlan.FirstAccessDate.Date}.");
+                }
+                // Ensures efficient data retrieval by blocking requests outside the user's subscription period, which reduces processing overhead and avoids unnecessary data requests.
+                startDateTimeUtc = _userSubscriptionPlan.FirstAccessDate.Date;
+
+                if (startDateTimeUtc >= historyRequest.EndTimeUtc)
+                {
+                    return false;
+                }
+            }
+
+            if (!CanSubscribe(historyRequest.Symbol))
+            {
+                if (!_invalidSecurityTypeWarningFired)
+                {
+                    _invalidSecurityTypeWarningFired = true;
+                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Unsupported SecurityType '{historyRequest.Symbol.SecurityType}' for symbol '{historyRequest.Symbol}'");
+                }
+                return false;
+            }
+
+            if (startDateTimeUtc >= historyRequest.EndTimeUtc)
+            {
+                if (!_invalidStartTimeWarningFired)
+                {
+                    _invalidStartTimeWarningFired = true;
+                    Log.Error($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Error - The start date in the history request must come before the end date. No historical data will be returned.");
+                }
+                return false;
+            }
+
+            if (historyRequest.Symbol.SecurityType == SecurityType.Index && historyRequest.TickType != TickType.Trade)
+            {
+                if (!_invalidIndexTickTypeWarningFired)
+                {
+                    _invalidIndexTickTypeWarningFired = true;
+                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Request error: For Index securities, only 'Trade' TickType is supported.You requested '{historyRequest.TickType}'.");
+                }
+                return false;
+            }
+
+            return true;
+        }
     }
 }
