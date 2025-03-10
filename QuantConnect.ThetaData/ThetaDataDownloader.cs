@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -62,18 +62,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             }
             else
             {
-                var historyRequest = new HistoryRequest(
-                    startTimeUtc: downloadParameters.StartUtc,
-                    endTimeUtc: downloadParameters.EndUtc, dataType,
-                    symbol: symbol,
-                    resolution: downloadParameters.Resolution,
-                    exchangeHours: exchangeHours,
-                    dataTimeZone: dataTimeZone,
-                    fillForwardResolution: downloadParameters.Resolution,
-                    includeExtendedMarketHours: true,
-                    isCustomData: false,
-                    dataNormalizationMode: DataNormalizationMode.Raw,
-                    tickType: downloadParameters.TickType);
+                var historyRequest = downloadParameters.CreateHistoryRequest();
 
                 var historyData = _historyProvider.GetHistory(historyRequest);
 
