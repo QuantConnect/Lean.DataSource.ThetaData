@@ -17,7 +17,8 @@
       "data-types": [
         "OpenInterest",
         "Trade",
-        "Quote"
+        "Quote",
+        "Universe"
       ],
       "resolutions": [
         "Tick",
