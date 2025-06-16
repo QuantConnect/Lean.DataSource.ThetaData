@@ -75,12 +75,10 @@ public sealed class BestBidAndOfferService
     /// <summary>
     /// Updates the best bid price and size if they have changed, and raises an update event.
     /// </summary>
-    /// <param name="price">The new best bid price. Must be greater than zero.</param>
-    /// <param name="size">The new best bid size. Must be zero or greater.</param>
+    /// <param name="price">The new best bid price.</param>
+    /// <param name="size">The new best bid size.</param>
     public void UpdateBid(decimal price, decimal size)
     {
-        ValidateInput(price, size, nameof(UpdateBid));
-
         if (price != BestBidPrice || size != BestBidSize)
         {
             BestBidPrice = price;
@@ -92,35 +90,15 @@ public sealed class BestBidAndOfferService
     /// <summary>
     /// Updates the best ask price and size if they have changed, and raises an update event.
     /// </summary>
-    /// <param name="price">The new best ask price. Must be greater than zero.</param>
-    /// <param name="size">The new best ask size. Must be zero or greater.</param>
+    /// <param name="price">The new best ask price.</param>
+    /// <param name="size">The new best ask size.</param>
     public void UpdateAsk(decimal price, decimal size)
     {
-        ValidateInput(price, size, nameof(UpdateAsk));
-
         if (price != BestAskPrice || size != BestAskSize)
         {
             BestAskPrice = price;
             BestAskSize = size;
             BestBidAskUpdated?.Invoke(this, new BestBidAskWithTimeZoneUpdatedEventArgs(Symbol, BestBidPrice, BestBidSize, BestAskPrice, BestAskSize, SymbolDateTimeZone));
-        }
-    }
-
-    /// <summary>
-    /// Validates that price is greater than zero and size is non-negative.
-    /// </summary>
-    private static void ValidateInput(decimal price, decimal size, string methodName)
-    {
-        if (price <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(price), price,
-                $"{nameof(BestBidAndOfferService)}.{methodName}: Price must be greater than zero.");
-        }
-
-        if (size < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(size), size,
-                $"{nameof(BestBidAndOfferService)}.{methodName}: Size cannot be negative.");
         }
     }
 }
