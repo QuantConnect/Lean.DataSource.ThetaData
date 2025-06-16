@@ -31,6 +31,8 @@ using QuantConnect.Configuration;
 using System.Security.Cryptography;
 using System.Net.NetworkInformation;
 using System.Collections.Concurrent;
+using QuantConnect.Lean.DataSource.ThetaData.Models;
+using QuantConnect.Lean.DataSource.ThetaData.Services;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Enums;
 using QuantConnect.Lean.DataSource.ThetaData.Models.WebSocket;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Interfaces;
@@ -97,18 +99,9 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         private volatile bool isInternetDisconnected;
 
         /// <summary>
-        /// A thread-safe dictionary that stores the order books by brokerage symbols.
+        /// A thread-safe dictionary that stores the best Bid and Offer by brokerage symbols.
         /// </summary>
-        private readonly ConcurrentDictionary<Symbol, DefaultOrderBook> _orderBooks = new();
-
-        /// <summary>
-        /// A thread-safe dictionary that maps a <see cref="Symbol"/> to a <see cref="DateTimeZone"/>.
-        /// </summary>
-        /// <remarks>
-        /// This dictionary is used to store the time zone information for each symbol in a concurrent environment,
-        /// ensuring thread safety when accessing or modifying the time zone data.
-        /// </remarks>
-        private readonly ConcurrentDictionary<Symbol, DateTimeZone> _exchangeTimeZoneByLeanSymbol = new();
+        private readonly ConcurrentDictionary<Symbol, BestBidAndOfferService> _bestBidAndOfferServices = new();
 
         /// <summary>
         /// The time provider instance. Used for improved testability
@@ -175,13 +168,9 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 return null;
             }
 
-            var exchangeTimeZone = dataConfig.Symbol.GetSymbolExchangeTimeZone();
-            _exchangeTimeZoneByLeanSymbol[dataConfig.Symbol] = exchangeTimeZone;
-
-            if (!_orderBooks.TryGetValue(dataConfig.Symbol, out var orderBook))
+            if (!_bestBidAndOfferServices.TryGetValue(dataConfig.Symbol, out var levelOneService))
             {
-                _orderBooks[dataConfig.Symbol] = new DefaultOrderBook(dataConfig.Symbol);
-                _orderBooks[dataConfig.Symbol].BestBidAskUpdated += OnBestBidAskUpdated;
+                _bestBidAndOfferServices[dataConfig.Symbol] = new(dataConfig.Symbol, OnBestBidAskUpdated);
             }
 
             var enumerator = _dataAggregator.Add(dataConfig, newDataAvailableHandler);
@@ -196,9 +185,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             _subscriptionManager.Unsubscribe(dataConfig);
             _dataAggregator.Remove(dataConfig);
 
-            _exchangeTimeZoneByLeanSymbol.Remove(dataConfig.Symbol, out _);
-
-            if (_orderBooks.TryRemove(dataConfig.Symbol, out var orderBook))
+            if (_bestBidAndOfferServices.TryRemove(dataConfig.Symbol, out var orderBook))
             {
                 orderBook.BestBidAskUpdated -= OnBestBidAskUpdated;
             }
@@ -209,18 +196,13 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// </summary>
         /// <param name="sender">The source of the event.</param>
         /// <param name="bestBidAskUpdatedEvent">The event arguments containing best bid and ask details.</param>
-        private void OnBestBidAskUpdated(object? sender, BestBidAskUpdatedEventArgs bestBidAskUpdatedEvent)
+        private void OnBestBidAskUpdated(object? sender, BestBidAskWithTimeZoneUpdatedEventArgs bestBidAskUpdatedEvent)
         {
-            if (!_exchangeTimeZoneByLeanSymbol.TryGetValue(bestBidAskUpdatedEvent.Symbol, out var exchangeTimeZone))
-            {
-                return;
-            }
-
             var tick = new Tick
             {
                 AskPrice = bestBidAskUpdatedEvent.BestAskPrice,
                 BidPrice = bestBidAskUpdatedEvent.BestBidPrice,
-                Time = DateTime.UtcNow.ConvertFromUtc(exchangeTimeZone),
+                Time = DateTime.UtcNow.ConvertFromUtc(bestBidAskUpdatedEvent.SymbolDateTimeZone),
                 Symbol = bestBidAskUpdatedEvent.Symbol,
                 TickType = TickType.Quote,
                 AskSize = bestBidAskUpdatedEvent.BestAskSize,
@@ -294,40 +276,26 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
         private void HandleQuoteMessage(Symbol symbol, WebSocketQuote webSocketQuote)
         {
-            if (_orderBooks.TryGetValue(symbol, out var orderBook))
+            if (_bestBidAndOfferServices.TryGetValue(symbol, out var bestBidAndOfferService))
             {
-                if (webSocketQuote.AskPrice > 0 && webSocketQuote.AskSize > 0)
-                {
-                    orderBook.UpdateAskRow(webSocketQuote.AskPrice, webSocketQuote.AskSize);
-                }
-                else if (webSocketQuote.AskSize == 0 && webSocketQuote.AskPrice != 0)
-                {
-                    orderBook.RemoveAskRow(webSocketQuote.AskPrice);
-                }
-
-                if (webSocketQuote.BidPrice > 0 && webSocketQuote.BidSize > 0)
-                {
-                    orderBook.UpdateBidRow(webSocketQuote.BidPrice, webSocketQuote.BidSize);
-                }
-                else if (webSocketQuote.BidSize == 0 && webSocketQuote.BidPrice != 0)
-                {
-                    orderBook.RemoveBidRow(webSocketQuote.BidPrice);
-                }
+                bestBidAndOfferService.UpdateAsk(webSocketQuote.AskPrice, webSocketQuote.AskSize);
+                bestBidAndOfferService.UpdateBid(webSocketQuote.BidPrice, webSocketQuote.BidSize);
             }
             else
             {
-                Log.Error($"{nameof(ThetaDataProvider)}.{nameof(HandleQuoteMessage)}: Symbol {symbol} not found in order books. This could indicate an unexpected symbol or a missing initialization step.");
+                Log.Error($"{nameof(ThetaDataProvider)}.{nameof(HandleQuoteMessage)}: Symbol {symbol} not found in {nameof(_bestBidAndOfferServices)}. This could indicate an unexpected symbol or a missing initialization step.");
             }
         }
 
         private void HandleTradeMessage(Symbol symbol, WebSocketTrade webSocketTrade)
         {
-            if (!_exchangeTimeZoneByLeanSymbol.TryGetValue(symbol, out var exchangeTimeZone))
+            if (!_bestBidAndOfferServices.TryGetValue(symbol, out var bestBidAndOfferService))
             {
+                Log.Error($"{nameof(ThetaDataProvider)}.{nameof(HandleTradeMessage)}: Symbol {symbol} not found in {nameof(_bestBidAndOfferServices)}. This could indicate an unexpected symbol or a missing initialization step.");
                 return;
             }
 
-            var tick = new Tick(DateTime.UtcNow.ConvertFromUtc(exchangeTimeZone), symbol, webSocketTrade.Condition.ToStringInvariant(), webSocketTrade.Exchange.TryGetExchangeOrDefault(), webSocketTrade.Size, webSocketTrade.Price);
+            var tick = new Tick(DateTime.UtcNow.ConvertFromUtc(bestBidAndOfferService.SymbolDateTimeZone), symbol, webSocketTrade.Condition.ToStringInvariant(), webSocketTrade.Exchange.TryGetExchangeOrDefault(), webSocketTrade.Size, webSocketTrade.Price);
             lock (_lock)
             {
                 _dataAggregator.Update(tick);

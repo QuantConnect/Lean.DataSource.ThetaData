@@ -14,6 +14,7 @@
 */
 
 using System;
+using System.Text;
 using System.Linq;
 using NUnit.Framework;
 using System.Threading;
@@ -54,16 +55,61 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
             }
         }
 
-        [TestCase("AAPL", SecurityType.Equity, Resolution.Second, 0, "2024/08/16")]
-        [TestCase("AAPL", SecurityType.Option, Resolution.Second, 215, "2024/08/16")]
-        [TestCase("VIX", SecurityType.Index, Resolution.Second, 0, "2024/08/16")]
-        public void CanSubscribeAndUnsubscribeOnSecondResolution(string ticker, SecurityType securityType, Resolution resolution, decimal strikePrice, DateTime expiryDate = default)
+        private static IEnumerable<TestCaseData> TestParameters
         {
-            var configs = GetSubscriptionDataConfigs(ticker, securityType, resolution, strikePrice, expiryDate);
+            get
+            {
+                var AAPL = Symbols.AAPL;
+                yield return new TestCaseData(new Symbol[] { AAPL }, Resolution.Second);
+
+                var DJI_Index = Symbol.Create("DJI", SecurityType.Index, Market.USA);
+                yield return new TestCaseData(new Symbol[] { DJI_Index }, Resolution.Second);
+
+                var NVDA = Symbol.Create("NVDA", SecurityType.Equity, Market.USA);
+                var DJT = Symbol.Create("DJT", SecurityType.Equity, Market.USA);
+                var TSLA = Symbol.Create("TSLA", SecurityType.Equity, Market.USA);
+                yield return new TestCaseData(new Symbol[] { AAPL, DJI_Index, NVDA, DJT, TSLA }, Resolution.Second);
+
+                var AAPL_Option = Symbol.CreateOption(AAPL, AAPL.ID.Market, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 220m, new DateTime(2025, 06, 20));
+                var AAPL_Option2 = Symbol.CreateOption(AAPL, AAPL.ID.Market, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 217.5m, new DateTime(2026, 06, 20));
+                var AAPL_Option3 = Symbol.CreateOption(AAPL, AAPL.ID.Market, SecurityType.Option.DefaultOptionStyle(), OptionRight.Put, 220m, new DateTime(2026, 06, 20));
+                var AAPL_Option4 = Symbol.CreateOption(AAPL, AAPL.ID.Market, SecurityType.Option.DefaultOptionStyle(), OptionRight.Put, 217.5m, new DateTime(2026, 06, 20));
+                yield return new TestCaseData(new[] { AAPL_Option, AAPL_Option2, AAPL_Option3, AAPL_Option4 }, Resolution.Second);
+
+                var nok = Symbol.Create("NOK", SecurityType.Equity, Market.USA);
+                var nok_option = Symbol.CreateOption(nok, nok.ID.Market, SecurityType.Option.DefaultOptionStyle(), OptionRight.Call, 7.5m, new DateTime(2026, 06, 20));
+
+                yield return new TestCaseData(new[] { nok_option }, Resolution.Second);
+            }
+        }
+
+        [Test, TestCaseSource(nameof(TestParameters))]
+        public void CanSubscribeAndUnsubscribeOnSecondResolution(Symbol[] symbols, Resolution resolution)
+        {
+
+            var configs = new List<SubscriptionDataConfig>();
+
+            var dataFromEnumerator = new Dictionary<Symbol, Dictionary<Type, int>>();
+
+            foreach (var symbol in symbols)
+            {
+                dataFromEnumerator[symbol] = new Dictionary<Type, int>();
+                foreach (var config in GetSubscriptionDataConfigs(symbol, resolution))
+                {
+                    configs.Add(config);
+
+                    var tickType = config.TickType switch
+                    {
+                        TickType.Quote => typeof(QuoteBar),
+                        TickType.Trade => typeof(TradeBar),
+                        _ => throw new NotImplementedException()
+                    };
+
+                    dataFromEnumerator[symbol][tickType] = 0;
+                }
+            }
 
             Assert.That(configs, Is.Not.Empty);
-
-            var dataFromEnumerator = new Dictionary<Type, int>() { { typeof(TradeBar), 0 }, { typeof(QuoteBar), 0 } };
 
             Action<BaseData> callback = (dataPoint) =>
             {
@@ -74,13 +120,18 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
 
                 switch (dataPoint)
                 {
-                    case TradeBar _:
-                        dataFromEnumerator[typeof(TradeBar)] += 1;
+                    case TradeBar tb:
+                        dataFromEnumerator[tb.Symbol][typeof(TradeBar)] += 1;
                         break;
-                    case QuoteBar _:
-                        dataFromEnumerator[typeof(QuoteBar)] += 1;
+                    case QuoteBar qb:
+                        Assert.GreaterOrEqual(qb.Ask.Open, qb.Bid.Open, $"QuoteBar validation failed for {qb.Symbol}: Ask.Open ({qb.Ask.Open}) <= Bid.Open ({qb.Bid.Open}). Full data: {DisplayBaseData(qb)}");
+                        Assert.GreaterOrEqual(qb.Ask.High, qb.Bid.High, $"QuoteBar validation failed for {qb.Symbol}: Ask.High ({qb.Ask.High}) <= Bid.High ({qb.Bid.High}). Full data: {DisplayBaseData(qb)}");
+                        Assert.GreaterOrEqual(qb.Ask.Low, qb.Bid.Low, $"QuoteBar validation failed for {qb.Symbol}: Ask.Low ({qb.Ask.Low}) <= Bid.Low ({qb.Bid.Low}). Full data: {DisplayBaseData(qb)}");
+                        Assert.GreaterOrEqual(qb.Ask.Close, qb.Bid.Close, $"QuoteBar validation failed for {qb.Symbol}: Ask.Close ({qb.Ask.Close}) <= Bid.Close ({qb.Bid.Close}). Full data: {DisplayBaseData(qb)}");
+                        dataFromEnumerator[qb.Symbol][typeof(QuoteBar)] += 1;
                         break;
-                };
+                }
+                ;
             };
 
             foreach (var config in configs)
@@ -92,7 +143,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
                 }), _cancellationTokenSource.Token, callback: callback);
             }
 
-            Thread.Sleep(TimeSpan.FromSeconds(25));
+            Thread.Sleep(TimeSpan.FromSeconds(60));
 
             Log.Trace("Unsubscribing symbols");
             foreach (var config in configs)
@@ -104,20 +155,40 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
 
             _cancellationTokenSource.Cancel();
 
-            Log.Trace($"{nameof(ThetaDataProviderTests)}.{nameof(CanSubscribeAndUnsubscribeOnSecondResolution)}: ***** Summary *****");
-            Log.Trace($"Input parameters: ticker:{ticker} | securityType:{securityType} | resolution:{resolution}");
+            var str = new StringBuilder();
 
-            foreach (var data in dataFromEnumerator)
+            str.AppendLine($"{nameof(ThetaDataProviderTests)}.{nameof(CanSubscribeAndUnsubscribeOnSecondResolution)}: ***** Summary *****");
+
+            foreach (var symbol in symbols)
             {
-                Log.Trace($"[{data.Key}] = {data.Value}");
+                str.AppendLine($"Input parameters: ticker:{symbol} | securityType:{symbol.SecurityType} | resolution:{resolution}");
+
+                foreach (var tickType in dataFromEnumerator[symbol])
+                {
+                    str.AppendLine($"[{tickType.Key}] = {tickType.Value}");
+
+                    if (symbol.SecurityType != SecurityType.Index)
+                    {
+                        Assert.Greater(tickType.Value, 0);
+                    }
+                    // The ThetaData returns TradeBar seldom. Perhaps should find more relevant ticker.
+                    Assert.GreaterOrEqual(tickType.Value, 0);
+                }
+                str.AppendLine(new string('-', 30));
             }
 
-            if (securityType != SecurityType.Index)
+            Log.Trace(str.ToString());
+        }
+
+        private static string DisplayBaseData(BaseData item)
+        {
+            switch (item)
             {
-                Assert.Greater(dataFromEnumerator[typeof(QuoteBar)], 0);
+                case TradeBar tradeBar:
+                    return $"Data Type: {item.DataType} | " + tradeBar.ToString() + $" Time: {tradeBar.Time}, EndTime: {tradeBar.EndTime}";
+                default:
+                    return $"DEFAULT: Data Type: {item.DataType} | Time: {item.Time} | End Time: {item.EndTime} | Symbol: {item.Symbol} | Price: {item.Price} | IsFillForward: {item.IsFillForward}";
             }
-            // The ThetaData returns TradeBar seldom. Perhaps should find more relevant ticker.
-            Assert.GreaterOrEqual(dataFromEnumerator[typeof(TradeBar)], 0);
         }
 
         [TestCase("AAPL", SecurityType.Equity)]
@@ -152,7 +223,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
                         case TickType.Quote:
                             incomingSymbolDataByTickType[(tick.Symbol, tick.TickType)] += 1;
                             break;
-                    };
+                    }
                 }
             };
 
