@@ -13,7 +13,6 @@
  * limitations under the License.
 */
 
-using NodaTime;
 using RestSharp;
 using System.Net;
 using System.Text;
@@ -26,13 +25,10 @@ using QuantConnect.Logging;
 using Newtonsoft.Json.Linq;
 using QuantConnect.Interfaces;
 using QuantConnect.Brokerages;
-using QuantConnect.Data.Market;
 using QuantConnect.Configuration;
 using System.Security.Cryptography;
 using System.Net.NetworkInformation;
 using System.Collections.Concurrent;
-using QuantConnect.Lean.DataSource.ThetaData.Models;
-using QuantConnect.Lean.DataSource.ThetaData.Services;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Enums;
 using QuantConnect.Lean.DataSource.ThetaData.Models.WebSocket;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Interfaces;
@@ -101,7 +97,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <summary>
         /// A thread-safe dictionary that stores the best Bid and Offer by brokerage symbols.
         /// </summary>
-        private readonly ConcurrentDictionary<Symbol, BestBidAndOfferService> _bestBidAndOfferServices = new();
+        private readonly ConcurrentDictionary<Symbol, LevelOneService> _levelOneServiceBySymbol = new();
 
         /// <summary>
         /// The time provider instance. Used for improved testability
@@ -168,9 +164,9 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 return null;
             }
 
-            if (!_bestBidAndOfferServices.TryGetValue(dataConfig.Symbol, out var levelOneService))
+            if (!_levelOneServiceBySymbol.TryGetValue(dataConfig.Symbol, out var levelOneService))
             {
-                _bestBidAndOfferServices[dataConfig.Symbol] = new(dataConfig.Symbol, OnBestBidAskUpdated);
+                _levelOneServiceBySymbol[dataConfig.Symbol] = new(dataConfig.Symbol, _dataAggregator);
             }
 
             var enumerator = _dataAggregator.Add(dataConfig, newDataAvailableHandler);
@@ -185,35 +181,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             _subscriptionManager.Unsubscribe(dataConfig);
             _dataAggregator.Remove(dataConfig);
 
-            if (_bestBidAndOfferServices.TryRemove(dataConfig.Symbol, out var orderBook))
-            {
-                orderBook.BestBidAskUpdated -= OnBestBidAskUpdated;
-            }
-        }
-
-        /// <summary>
-        /// Handles updates to the best bid and ask prices and updates the aggregator with a new quote tick.
-        /// </summary>
-        /// <param name="sender">The source of the event.</param>
-        /// <param name="bestBidAskUpdatedEvent">The event arguments containing best bid and ask details.</param>
-        private void OnBestBidAskUpdated(object? sender, BestBidAskWithTimeZoneUpdatedEventArgs bestBidAskUpdatedEvent)
-        {
-            var tick = new Tick
-            {
-                AskPrice = bestBidAskUpdatedEvent.BestAskPrice,
-                BidPrice = bestBidAskUpdatedEvent.BestBidPrice,
-                Time = DateTime.UtcNow.ConvertFromUtc(bestBidAskUpdatedEvent.SymbolDateTimeZone),
-                Symbol = bestBidAskUpdatedEvent.Symbol,
-                TickType = TickType.Quote,
-                AskSize = bestBidAskUpdatedEvent.BestAskSize,
-                BidSize = bestBidAskUpdatedEvent.BestBidSize
-            };
-            tick.SetValue();
-
-            lock (_lock)
-            {
-                _dataAggregator.Update(tick);
-            }
+            _levelOneServiceBySymbol.TryRemove(dataConfig.Symbol, out _);
         }
 
         /// <summary>
@@ -274,32 +242,33 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             }
         }
 
-        private void HandleQuoteMessage(Symbol symbol, WebSocketQuote webSocketQuote)
+        private void HandleQuoteMessage(Symbol symbol, WebSocketQuote quote)
         {
-            if (_bestBidAndOfferServices.TryGetValue(symbol, out var bestBidAndOfferService))
+            if (_levelOneServiceBySymbol.TryGetValue(symbol, out var levelOneService))
             {
-                bestBidAndOfferService.UpdateAsk(webSocketQuote.AskPrice, webSocketQuote.AskSize);
-                bestBidAndOfferService.UpdateBid(webSocketQuote.BidPrice, webSocketQuote.BidSize);
+                if (levelOneService.BestAskPrice == quote.AskPrice && levelOneService.BestAskSize == quote.AskSize
+                    && levelOneService.BestBidPrice == quote.BidPrice && levelOneService.BestBidSize == quote.BidSize)
+                {
+                    return;
+                }
+
+                levelOneService.UpdateQuote(DateTime.UtcNow, quote.BidPrice, quote.BidSize, quote.AskPrice, quote.AskSize);
             }
             else
             {
-                Log.Error($"{nameof(ThetaDataProvider)}.{nameof(HandleQuoteMessage)}: Symbol {symbol} not found in {nameof(_bestBidAndOfferServices)}. This could indicate an unexpected symbol or a missing initialization step.");
+                Log.Error($"{nameof(ThetaDataProvider)}.{nameof(HandleQuoteMessage)}: Symbol {symbol} not found in {nameof(_levelOneServiceBySymbol)}. This could indicate an unexpected symbol or a missing initialization step.");
             }
         }
 
-        private void HandleTradeMessage(Symbol symbol, WebSocketTrade webSocketTrade)
+        private void HandleTradeMessage(Symbol symbol, WebSocketTrade trade)
         {
-            if (!_bestBidAndOfferServices.TryGetValue(symbol, out var bestBidAndOfferService))
+            if (!_levelOneServiceBySymbol.TryGetValue(symbol, out var levelOneService))
             {
-                Log.Error($"{nameof(ThetaDataProvider)}.{nameof(HandleTradeMessage)}: Symbol {symbol} not found in {nameof(_bestBidAndOfferServices)}. This could indicate an unexpected symbol or a missing initialization step.");
+                Log.Error($"{nameof(ThetaDataProvider)}.{nameof(HandleTradeMessage)}: Symbol {symbol} not found in {nameof(_levelOneServiceBySymbol)}. This could indicate an unexpected symbol or a missing initialization step.");
                 return;
             }
 
-            var tick = new Tick(DateTime.UtcNow.ConvertFromUtc(bestBidAndOfferService.SymbolDateTimeZone), symbol, webSocketTrade.Condition.ToStringInvariant(), webSocketTrade.Exchange.TryGetExchangeOrDefault(), webSocketTrade.Size, webSocketTrade.Price);
-            lock (_lock)
-            {
-                _dataAggregator.Update(tick);
-            }
+            levelOneService.UpdateLastTrade(DateTime.UtcNow, trade.Size, trade.Price, trade.Condition.ToStringInvariant(), trade.Exchange.TryGetExchangeOrDefault());
         }
 
         /// <summary>
