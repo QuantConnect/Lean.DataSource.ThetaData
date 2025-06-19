@@ -24,11 +24,10 @@ using QuantConnect.Packets;
 using QuantConnect.Logging;
 using Newtonsoft.Json.Linq;
 using QuantConnect.Interfaces;
-using QuantConnect.Brokerages;
+using QuantConnect.Data.LevelOne;
 using QuantConnect.Configuration;
 using System.Security.Cryptography;
 using System.Net.NetworkInformation;
-using System.Collections.Concurrent;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Enums;
 using QuantConnect.Lean.DataSource.ThetaData.Models.WebSocket;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Interfaces;
@@ -52,9 +51,10 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         private ThetaDataSymbolMapper _symbolMapper;
 
         /// <summary>
-        /// Helper class is doing to subscribe / unsubscribe process.
+        /// Manages Level 1 market data subscriptions and routing of updates to the shared <see cref="IDataAggregator"/>.
+        /// Responsible for tracking and updating individual <see cref="LevelOneMarketData"/> instances per symbol.
         /// </summary>
-        private EventBasedDataQueueHandlerSubscriptionManager _subscriptionManager;
+        private LevelOneServiceManager _levelOneServiceManager;
 
         /// <summary>
         /// Represents an instance of a WebSocket client wrapper for ThetaData.net.
@@ -65,11 +65,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// Represents a client for interacting with the Theta Data REST API by sending HTTP requests.
         /// </summary>
         private ThetaDataRestApiClient _restApiClient;
-
-        /// <summary>
-        /// Ensures thread-safe synchronization when updating aggregation tick data, such as quotes or trades.
-        /// </summary>
-        private object _lock = new object();
 
         /// <summary>
         /// Represents the subscription plan assigned to the user.
@@ -93,11 +88,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// This boolean flag is used to track whether the internet connection is currently disconnected.
         /// </remarks>
         private volatile bool isInternetDisconnected;
-
-        /// <summary>
-        /// A thread-safe dictionary that stores the best Bid and Offer by brokerage symbols.
-        /// </summary>
-        private readonly ConcurrentDictionary<Symbol, LevelOneService> _levelOneServiceBySymbol = new();
 
         /// <summary>
         /// The time provider instance. Used for improved testability
@@ -164,13 +154,8 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 return null;
             }
 
-            if (!_levelOneServiceBySymbol.TryGetValue(dataConfig.Symbol, out var levelOneService))
-            {
-                _levelOneServiceBySymbol[dataConfig.Symbol] = new(dataConfig.Symbol, _dataAggregator);
-            }
-
             var enumerator = _dataAggregator.Add(dataConfig, newDataAvailableHandler);
-            _subscriptionManager.Subscribe(dataConfig);
+            _levelOneServiceManager.Subscribe(dataConfig);
 
             return enumerator;
         }
@@ -178,10 +163,8 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <inheritdoc />
         public void Unsubscribe(SubscriptionDataConfig dataConfig)
         {
-            _subscriptionManager.Unsubscribe(dataConfig);
+            _levelOneServiceManager.Unsubscribe(dataConfig);
             _dataAggregator.Remove(dataConfig);
-
-            _levelOneServiceBySymbol.TryRemove(dataConfig.Symbol, out _);
         }
 
         /// <summary>
@@ -221,16 +204,18 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             switch (json?.Header.Type)
             {
                 case WebSocketHeaderType.Quote when leanSymbol != null && json.Quote != null:
-                    HandleQuoteMessage(leanSymbol, json.Quote.Value);
+                    var quote = json.Quote.Value;
+                    _levelOneServiceManager.HandleQuote(leanSymbol, DateTime.UtcNow, quote.BidPrice, quote.BidSize, quote.AskPrice, quote.AskSize);
                     break;
                 case WebSocketHeaderType.Trade when leanSymbol != null && json.Trade != null:
-                    HandleTradeMessage(leanSymbol, json.Trade.Value);
+                    var lastTrade = json.Trade.Value;
+                    _levelOneServiceManager.HandleLastTrade(leanSymbol, DateTime.UtcNow, lastTrade.Size, lastTrade.Price, lastTrade.Condition.ToStringInvariant(), lastTrade.Exchange.TryGetExchangeOrDefault());
                     break;
                 case WebSocketHeaderType.Status when json.Header.Status == "DISCONNECTED":
                     isInternetDisconnected = true;
                     break;
                 case WebSocketHeaderType.Status when isInternetDisconnected:
-                    isInternetDisconnected = !_webSocketClient.Subscribe(_subscriptionManager.GetSubscribedSymbols(), true);
+                    isInternetDisconnected = !_webSocketClient.Subscribe(_levelOneServiceManager.GetSubscribedSymbols(), true);
                     break;
                 case WebSocketHeaderType.Status when json.Header.Status == "CONNECTED":
                     break;
@@ -240,35 +225,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                     Log.Debug(message);
                     break;
             }
-        }
-
-        private void HandleQuoteMessage(Symbol symbol, WebSocketQuote quote)
-        {
-            if (_levelOneServiceBySymbol.TryGetValue(symbol, out var levelOneService))
-            {
-                if (levelOneService.BestAskPrice == quote.AskPrice && levelOneService.BestAskSize == quote.AskSize
-                    && levelOneService.BestBidPrice == quote.BidPrice && levelOneService.BestBidSize == quote.BidSize)
-                {
-                    return;
-                }
-
-                levelOneService.UpdateQuote(DateTime.UtcNow, quote.BidPrice, quote.BidSize, quote.AskPrice, quote.AskSize);
-            }
-            else
-            {
-                Log.Error($"{nameof(ThetaDataProvider)}.{nameof(HandleQuoteMessage)}: Symbol {symbol} not found in {nameof(_levelOneServiceBySymbol)}. This could indicate an unexpected symbol or a missing initialization step.");
-            }
-        }
-
-        private void HandleTradeMessage(Symbol symbol, WebSocketTrade trade)
-        {
-            if (!_levelOneServiceBySymbol.TryGetValue(symbol, out var levelOneService))
-            {
-                Log.Error($"{nameof(ThetaDataProvider)}.{nameof(HandleTradeMessage)}: Symbol {symbol} not found in {nameof(_levelOneServiceBySymbol)}. This could indicate an unexpected symbol or a missing initialization step.");
-                return;
-            }
-
-            levelOneService.UpdateLastTrade(DateTime.UtcNow, trade.Size, trade.Price, trade.Condition.ToStringInvariant(), trade.Exchange.TryGetExchangeOrDefault());
         }
 
         /// <summary>
@@ -352,9 +308,10 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             _optionChainProvider = new ThetaDataOptionChainProvider(_symbolMapper, _restApiClient);
 
             _webSocketClient = new ThetaDataWebSocketClientWrapper(_symbolMapper, _userSubscriptionPlan.MaxStreamingContracts, OnMessage, OnError);
-            _subscriptionManager = new EventBasedDataQueueHandlerSubscriptionManager();
-            _subscriptionManager.SubscribeImpl += (symbols, _) => _webSocketClient.Subscribe(symbols);
-            _subscriptionManager.UnsubscribeImpl += (symbols, _) => _webSocketClient.Unsubscribe(symbols);
+            _levelOneServiceManager = new LevelOneServiceManager(
+                _dataAggregator,
+                (symbols, _) => _webSocketClient.Subscribe(symbols),
+                (symbols, _) => _webSocketClient.Unsubscribe(symbols));
 
             ValidateSubscription();
         }
