@@ -14,8 +14,11 @@
 */
 
 using System;
+using Newtonsoft.Json;
 using NUnit.Framework;
 using System.Collections.Generic;
+using QuantConnect.Lean.DataSource.ThetaData.Models.Enums;
+using QuantConnect.Lean.DataSource.ThetaData.Models.WebSocket;
 
 namespace QuantConnect.Lean.DataSource.ThetaData.Tests;
 
@@ -83,5 +86,57 @@ public class ThetaDataAdditionalTests
         );
 
         Assert.AreEqual(1, ranges.Count, "There should be no date ranges generated.");
+    }
+
+    [Test]
+    public void DeserializeWebSocketQuoteResponse()
+    {
+        var webSocketQuoteResponse = @"{
+    ""header"": {
+        ""type"": ""QUOTE"",
+        ""status"": ""CONNECTED""
+    },
+    ""contract"": {
+        ""security_type"": ""STOCK"",
+        ""root"": ""NVDA""
+    },
+    ""quote"": {
+        ""ms_of_day"": 43032783,
+        ""bid_size"": 516,
+        ""bid_exchange"": 29,
+        ""bid"": 145.58,
+        ""bid_condition"": 0,
+        ""ask_size"": 1527,
+        ""ask_exchange"": 29,
+        ""ask"": 145.59,
+        ""ask_condition"": 0,
+        ""date"": 20250616
+    }
+}";
+
+        var webSocketResponse = JsonConvert.DeserializeObject<WebSocketResponse>(webSocketQuoteResponse);
+
+        Assert.IsNotNull(webSocketResponse);
+        Assert.IsNotNull(webSocketResponse.Header.Type);
+        Assert.AreEqual(WebSocketHeaderType.Quote, webSocketResponse.Header.Type);
+
+        Assert.IsNotNull(webSocketResponse.Contract);
+        Assert.AreEqual(ContractSecurityType.Equity, webSocketResponse.Contract?.SecurityType);
+        Assert.AreEqual("NVDA", webSocketResponse.Contract?.Root);
+
+        Assert.IsNotNull(webSocketResponse.Quote);
+        var quote = webSocketResponse.Quote.Value;
+        Assert.AreEqual(43032783, quote.TimeMilliseconds);
+        Assert.AreEqual(516m, quote.BidSize);
+        Assert.AreEqual(29m, quote.BidExchange);
+        Assert.AreEqual(145.58m, quote.BidPrice);
+        Assert.AreEqual(0, quote.BidCondition);
+        Assert.AreEqual(1527m, quote.AskSize);
+        Assert.AreEqual(29m, quote.AskExchange);
+        Assert.AreEqual(145.59m, quote.AskPrice);
+        Assert.AreEqual(0, quote.AskCondition);
+        Assert.AreEqual(new DateTime(2025, 06, 16), quote.Date);
+
+        Assert.IsNull(webSocketResponse.Trade);
     }
 }
