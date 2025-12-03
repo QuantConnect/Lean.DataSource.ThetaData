@@ -13,7 +13,6 @@
  * limitations under the License.
 */
 
-using RestSharp;
 using QuantConnect.Logging;
 using QuantConnect.Interfaces;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
@@ -77,12 +76,14 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             var optionStyle = optionsSecurityType.DefaultOptionStyle();
 
             // just using quote, which is the most inclusive
-            var request = new RestRequest($"/list/contracts/option/quote", Method.GET);
+            var endpoint = "/list/contracts/option/quote";
+            var queryParameters = new Dictionary<string, string>
+            {
+                [RequestParameters.StartDate] = date.ConvertToThetaDataDateFormat(),
+                ["root"] = underlying.Value
+            };
 
-            request.AddQueryParameter(RequestParameters.StartDate, date.ConvertToThetaDataDateFormat());
-            request.AddQueryParameter("root", underlying.Value);
-
-            foreach (var option in _restApiClient.ExecuteRequest<BaseResponse<QuoteListContract>>(request).SelectMany(x => x.Response))
+            foreach (var option in _restApiClient.ExecuteRequest<BaseResponse<QuoteListContract>>(endpoint, queryParameters).SelectMany(x => x.Response))
             {
                 yield return _symbolMapper.GetLeanSymbol(underlying.Value, optionsSecurityType, underlying.ID.Market, optionStyle,
                     option.Expiry, option.Strike, option.Right == "C" ? OptionRight.Call : OptionRight.Put, underlying);

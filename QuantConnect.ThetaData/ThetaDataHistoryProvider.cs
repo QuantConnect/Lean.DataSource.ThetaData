@@ -14,7 +14,6 @@
 */
 
 using NodaTime;
-using RestSharp;
 using QuantConnect.Data;
 using QuantConnect.Logging;
 using QuantConnect.Interfaces;
@@ -156,43 +155,43 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 return null;
             }
 
-            var restRequest = new RestRequest(Method.GET);
+            var queryParameters = new Dictionary<string, string>();
 
-            restRequest = GetSymbolHistoryQueryParametersBySymbol(restRequest, historyRequest.Symbol);
+            queryParameters = GetSymbolHistoryQueryParametersBySymbol(queryParameters, historyRequest.Symbol);
 
             var startDateTimeLocal = startDateTimeUtc.ConvertFromUtc(TimeZoneThetaData);
             var endDateTimeLocal = historyRequest.EndTimeUtc.ConvertFromUtc(TimeZoneThetaData);
 
-            restRequest.AddQueryParameter(RequestParameters.StartDate, startDateTimeLocal.ConvertToThetaDataDateFormat());
-            restRequest.AddQueryParameter(RequestParameters.EndDate, endDateTimeLocal.ConvertToThetaDataDateFormat());
-            restRequest.AddOrUpdateParameter("start_time", "0", ParameterType.QueryString);
+            queryParameters[RequestParameters.StartDate] = startDateTimeLocal.ConvertToThetaDataDateFormat();
+            queryParameters[RequestParameters.EndDate] = endDateTimeLocal.ConvertToThetaDataDateFormat();
+            queryParameters["start_time"] = "0";
 
-            restRequest.Resource = GetResourceUrlHistoryData(historyRequest.Symbol.SecurityType, historyRequest.TickType, historyRequest.Resolution);
+            var endpoint = GetResourceUrlHistoryData(historyRequest.Symbol.SecurityType, historyRequest.TickType, historyRequest.Resolution);
 
             var symbolExchangeTimeZone = historyRequest.Symbol.GetSymbolExchangeTimeZone();
 
             if (historyRequest.Symbol.SecurityType == SecurityType.Index && historyRequest.Resolution <= Resolution.Hour)
             {
-                return GetIndexIntradayHistoryData(restRequest, historyRequest.Symbol, historyRequest.Resolution, symbolExchangeTimeZone);
+                return GetIndexIntradayHistoryData(endpoint, queryParameters, historyRequest.Symbol, historyRequest.Resolution, symbolExchangeTimeZone);
             }
             else if (historyRequest.TickType == TickType.OpenInterest)
             {
-                return GetHistoricalOpenInterestData(restRequest, historyRequest.Symbol, symbolExchangeTimeZone);
+                return GetHistoricalOpenInterestData(endpoint, queryParameters, historyRequest.Symbol, symbolExchangeTimeZone);
             }
 
             var history = default(IEnumerable<BaseData>);
             switch (historyRequest.Resolution)
             {
                 case Resolution.Tick:
-                    history = GetTickHistoryData(restRequest, historyRequest.Symbol, Resolution.Tick, historyRequest.TickType, startDateTimeUtc, historyRequest.EndTimeUtc, symbolExchangeTimeZone);
+                    history = GetTickHistoryData(endpoint, queryParameters, historyRequest.Symbol, Resolution.Tick, historyRequest.TickType, startDateTimeUtc, historyRequest.EndTimeUtc, symbolExchangeTimeZone);
                     break;
                 case Resolution.Second:
                 case Resolution.Minute:
                 case Resolution.Hour:
-                    history = GetIntradayHistoryData(restRequest, historyRequest.Symbol, historyRequest.Resolution, historyRequest.TickType, symbolExchangeTimeZone);
+                    history = GetIntradayHistoryData(endpoint, queryParameters, historyRequest.Symbol, historyRequest.Resolution, historyRequest.TickType, symbolExchangeTimeZone);
                     break;
                 case Resolution.Daily:
-                    history = GetDailyHistoryData(restRequest, historyRequest.Symbol, historyRequest.Resolution, historyRequest.TickType, symbolExchangeTimeZone);
+                    history = GetDailyHistoryData(endpoint, queryParameters, historyRequest.Symbol, historyRequest.Resolution, historyRequest.TickType, symbolExchangeTimeZone);
                     break;
                 default:
                     throw new ArgumentException($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Invalid resolution: {historyRequest.Resolution}. Supported resolutions are Tick, Second, Minute, Hour, and Daily.");
@@ -221,13 +220,18 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             }
         }
 
-        public IEnumerable<BaseData>? GetIndexIntradayHistoryData(RestRequest request, Symbol symbol, Resolution resolution, DateTimeZone symbolExchangeTimeZone)
+        public IEnumerable<BaseData>? GetIndexIntradayHistoryData(string endpoint, Dictionary<string, string> queryParameters, Symbol symbol, Resolution resolution, DateTimeZone symbolExchangeTimeZone)
         {
-            request.AddQueryParameter(RequestParameters.IntervalInMilliseconds, GetIntervalsInMilliseconds(resolution));
+            queryParameters[RequestParameters.IntervalInMilliseconds] = GetIntervalsInMilliseconds(resolution);
 
             var period = resolution.ToTimeSpan();
-            foreach (var prices in _restApiClient.ExecuteRequest<BaseResponse<PriceResponse>>(request))
+            foreach (var prices in _restApiClient.ExecuteRequest<BaseResponse<PriceResponse>>(endpoint, queryParameters))
             {
+                if (prices.Response == null)
+                {
+                    continue;
+                }
+
                 if (resolution == Resolution.Tick)
                 {
                     foreach (var price in prices.Response)
@@ -251,34 +255,34 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             }
         }
 
-        public IEnumerable<BaseData>? GetTickHistoryData(RestRequest request, Symbol symbol, Resolution resolution, TickType tickType, DateTime startDateTimeUtc, DateTime endDateTimeUtc, DateTimeZone symbolExchangeTimeZone)
+        public IEnumerable<BaseData>? GetTickHistoryData(string endpoint, Dictionary<string, string> queryParameters, Symbol symbol, Resolution resolution, TickType tickType, DateTime startDateTimeUtc, DateTime endDateTimeUtc, DateTimeZone symbolExchangeTimeZone)
         {
             switch (tickType)
             {
                 case TickType.Trade:
-                    return GetHistoricalTickTradeDataByOneDayInterval(request, symbol, startDateTimeUtc, endDateTimeUtc, symbolExchangeTimeZone);
+                    return GetHistoricalTickTradeDataByOneDayInterval(endpoint, queryParameters, symbol, startDateTimeUtc, endDateTimeUtc, symbolExchangeTimeZone);
                 case TickType.Quote:
-                    request.AddQueryParameter(RequestParameters.IntervalInMilliseconds, GetIntervalsInMilliseconds(resolution));
+                    queryParameters[RequestParameters.IntervalInMilliseconds] = GetIntervalsInMilliseconds(resolution);
 
                     Func<QuoteResponse, BaseData> quoteCallback =
                         (quote) => new Tick(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(quote.DateTimeMilliseconds, symbolExchangeTimeZone), symbol, quote.AskCondition, quote.AskExchange.TryGetExchangeOrDefault(), quote.BidSize, quote.BidPrice, quote.AskSize, quote.AskPrice);
 
-                    return GetHistoricalQuoteData(request, quoteCallback);
+                    return GetHistoricalQuoteData(endpoint, queryParameters, quoteCallback);
                 default:
                     throw new ArgumentException($"Invalid tick type: {tickType}.");
             }
         }
 
-        public IEnumerable<BaseData>? GetIntradayHistoryData(RestRequest request, Symbol symbol, Resolution resolution, TickType tickType, DateTimeZone symbolExchangeTimeZone)
+        public IEnumerable<BaseData>? GetIntradayHistoryData(string endpoint, Dictionary<string, string> queryParameters, Symbol symbol, Resolution resolution, TickType tickType, DateTimeZone symbolExchangeTimeZone)
         {
-            request.AddQueryParameter(RequestParameters.IntervalInMilliseconds, GetIntervalsInMilliseconds(resolution));
+            queryParameters[RequestParameters.IntervalInMilliseconds] = GetIntervalsInMilliseconds(resolution);
 
             var period = resolution.ToTimeSpan();
 
             switch (tickType)
             {
                 case TickType.Trade:
-                    return GetHistoricalOpenHighLowCloseData(request, symbol, period, symbolExchangeTimeZone);
+                    return GetHistoricalOpenHighLowCloseData(endpoint, queryParameters, symbol, period, symbolExchangeTimeZone);
                 case TickType.Quote:
                     Func<QuoteResponse, BaseData> quoteCallback =
                         (quote) =>
@@ -288,24 +292,24 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                             return bar;
                         };
 
-                    return GetHistoricalQuoteData(request, quoteCallback);
+                    return GetHistoricalQuoteData(endpoint, queryParameters, quoteCallback);
                 default:
                     throw new ArgumentException($"Invalid tick type: {tickType}.");
             }
         }
 
-        public IEnumerable<BaseData>? GetDailyHistoryData(RestRequest request, Symbol symbol, Resolution resolution, TickType tickType, DateTimeZone symbolExchangeTimeZone)
+        public IEnumerable<BaseData>? GetDailyHistoryData(string endpoint, Dictionary<string, string> queryParameters, Symbol symbol, Resolution resolution, TickType tickType, DateTimeZone symbolExchangeTimeZone)
         {
             var period = resolution.ToTimeSpan();
             switch (tickType)
             {
                 case TickType.Trade:
-                    return GetHistoryEndOfDay(request,
+                    return GetHistoryEndOfDay(endpoint, queryParameters,
                         // If OHLC prices zero, low trading activity, empty result, low volatility.
                         (eof) => eof.Open == 0 || eof.High == 0 || eof.Low == 0 || eof.Close == 0,
                         (tradeDateTime, eof) => new TradeBar(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(tradeDateTime.Date, symbolExchangeTimeZone), symbol, eof.Open, eof.High, eof.Low, eof.Close, eof.Volume, period));
                 case TickType.Quote:
-                    return GetHistoryEndOfDay(request,
+                    return GetHistoryEndOfDay(endpoint, queryParameters,
                         // If Ask/Bid - prices/sizes zero, low quote activity, empty result, low volatility.
                         (eof) => eof.AskPrice == 0 || eof.AskSize == 0 || eof.BidPrice == 0 || eof.BidSize == 0,
                         (quoteDateTime, eof) =>
@@ -319,10 +323,15 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             }
         }
 
-        private IEnumerable<BaseData> GetHistoricalOpenInterestData(RestRequest request, Symbol symbol, DateTimeZone symbolExchangeTimeZone)
+        private IEnumerable<BaseData> GetHistoricalOpenInterestData(string endpoint, Dictionary<string, string> queryParameters, Symbol symbol, DateTimeZone symbolExchangeTimeZone)
         {
-            foreach (var openInterests in _restApiClient.ExecuteRequest<BaseResponse<OpenInterestResponse>>(request))
+            foreach (var openInterests in _restApiClient.ExecuteRequest<BaseResponse<OpenInterestResponse>>(endpoint, queryParameters))
             {
+                if (openInterests.Response == null)
+                {
+                    continue;
+                }
+
                 foreach (var openInterest in openInterests.Response)
                 {
                     yield return new OpenInterest(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(openInterest.DateTimeMilliseconds, symbolExchangeTimeZone), symbol, openInterest.OpenInterest);
@@ -330,18 +339,26 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             }
         }
 
-        private IEnumerable<Tick> GetHistoricalTickTradeDataByOneDayInterval(RestRequest request, Symbol symbol, DateTime startDateTimeUtc, DateTime endDateTimeUtc, DateTimeZone symbolExchangeTimeZone)
+        private IEnumerable<Tick> GetHistoricalTickTradeDataByOneDayInterval(string endpoint, Dictionary<string, string> queryParameters, Symbol symbol, DateTime startDateTimeUtc, DateTime endDateTimeUtc, DateTimeZone symbolExchangeTimeZone)
         {
             var startDateTimeET = startDateTimeUtc.ConvertFromUtc(TimeZoneThetaData);
             var endDateTimeET = endDateTimeUtc.ConvertFromUtc(TimeZoneThetaData);
 
             foreach (var dateRange in ThetaDataExtensions.GenerateDateRangesWithInterval(startDateTimeET, endDateTimeET))
             {
-                request.AddOrUpdateParameter(RequestParameters.StartDate, dateRange.startDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
-                request.AddOrUpdateParameter(RequestParameters.EndDate, dateRange.endDate.ConvertToThetaDataDateFormat(), ParameterType.QueryString);
-
-                foreach (var trades in _restApiClient.ExecuteRequest<BaseResponse<TradeResponse>>(request))
+                var modifiedParams = new Dictionary<string, string>(queryParameters)
                 {
+                    [RequestParameters.StartDate] = dateRange.startDate.ConvertToThetaDataDateFormat(),
+                    [RequestParameters.EndDate] = dateRange.endDate.ConvertToThetaDataDateFormat()
+                };
+
+                foreach (var trades in _restApiClient.ExecuteRequest<BaseResponse<TradeResponse>>(endpoint, modifiedParams))
+                {
+                    if (trades.Response == null)
+                    {
+                        continue;
+                    }
+
                     foreach (var trade in trades.Response)
                     {
                         yield return new Tick(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(trade.DateTimeMilliseconds, symbolExchangeTimeZone), symbol, trade.Condition.ToStringInvariant(), trade.Exchange.TryGetExchangeOrDefault(), trade.Size, trade.Price);
@@ -350,10 +367,15 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             }
         }
 
-        private IEnumerable<TradeBar> GetHistoricalOpenHighLowCloseData(RestRequest request, Symbol symbol, TimeSpan period, DateTimeZone symbolExchangeTimeZone)
+        private IEnumerable<TradeBar> GetHistoricalOpenHighLowCloseData(string endpoint, Dictionary<string, string> queryParameters, Symbol symbol, TimeSpan period, DateTimeZone symbolExchangeTimeZone)
         {
-            foreach (var trades in _restApiClient.ExecuteRequest<BaseResponse<OpenHighLowCloseResponse>>(request))
+            foreach (var trades in _restApiClient.ExecuteRequest<BaseResponse<OpenHighLowCloseResponse>>(endpoint, queryParameters))
             {
+                if (trades.Response == null)
+                {
+                    continue;
+                }
+
                 foreach (var trade in trades.Response)
                 {
                     // If Open|High|Low|Close - prices zero, low trade activity, empty result, low volatility.
@@ -367,10 +389,15 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             }
         }
 
-        private IEnumerable<BaseData> GetHistoricalQuoteData(RestRequest request, Func<QuoteResponse, BaseData> callback)
+        private IEnumerable<BaseData> GetHistoricalQuoteData(string endpoint, Dictionary<string, string> queryParameters, Func<QuoteResponse, BaseData> callback)
         {
-            foreach (var quotes in _restApiClient.ExecuteRequest<BaseResponse<QuoteResponse>>(request))
+            foreach (var quotes in _restApiClient.ExecuteRequest<BaseResponse<QuoteResponse>>(endpoint, queryParameters))
             {
+                if (quotes.Response == null)
+                {
+                    continue;
+                }
+
                 foreach (var quote in quotes.Response)
                 {
                     // If Ask/Bid - prices/sizes zero, low quote activity, empty result, low volatility.
@@ -384,10 +411,15 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             }
         }
 
-        private IEnumerable<BaseData>? GetHistoryEndOfDay(RestRequest request, Func<EndOfDayReportResponse, bool> validateEmptyResponse, Func<DateTime, EndOfDayReportResponse, BaseData> res)
+        private IEnumerable<BaseData>? GetHistoryEndOfDay(string endpoint, Dictionary<string, string> queryParameters, Func<EndOfDayReportResponse, bool> validateEmptyResponse, Func<DateTime, EndOfDayReportResponse, BaseData> res)
         {
-            foreach (var endOfDays in _restApiClient.ExecuteRequest<BaseResponse<EndOfDayReportResponse>>(request))
+            foreach (var endOfDays in _restApiClient.ExecuteRequest<BaseResponse<EndOfDayReportResponse>>(endpoint, queryParameters))
             {
+                if (endOfDays.Response == null)
+                {
+                    continue;
+                }
+
                 foreach (var endOfDay in endOfDays.Response)
                 {
                     if (validateEmptyResponse(endOfDay))
@@ -421,15 +453,15 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         };
 
         /// <summary>
-        /// Adds query parameters to the provided <see cref="RestRequest"/> based on the given <see cref="Symbol"/>.
+        /// Adds query parameters to the provided dictionary based on the given <see cref="Symbol"/>.
         /// </summary>
-        /// <param name="request">The <see cref="RestRequest"/> to which query parameters will be added.</param>
+        /// <param name="queryParameters">The dictionary to which query parameters will be added.</param>
         /// <param name="symbol">The <see cref="Symbol"/> containing the security type and ticker information.</param>
-        /// <returns>The updated <see cref="RestRequest"/> with added query parameters.</returns>
+        /// <returns>The updated dictionary with added query parameters.</returns>
         /// <exception cref="NotImplementedException">
         /// Thrown when the security type of the provided symbol is not implemented.
         /// </exception>
-        private RestRequest GetSymbolHistoryQueryParametersBySymbol(RestRequest request, Symbol symbol)
+        private Dictionary<string, string> GetSymbolHistoryQueryParametersBySymbol(Dictionary<string, string> queryParameters, Symbol symbol)
         {
             var ticker = _symbolMapper.GetBrokerageSymbol(symbol);
 
@@ -437,21 +469,21 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             {
                 case SecurityType.Index:
                 case SecurityType.Equity:
-                    request.AddQueryParameter("root", ticker);
+                    queryParameters["root"] = ticker;
                     break;
                 case SecurityType.Option:
                 case SecurityType.IndexOption:
                     var tickerOption = ticker.Split(',');
-                    request.AddQueryParameter("root", tickerOption[0]);
-                    request.AddQueryParameter("exp", tickerOption[1]);
-                    request.AddQueryParameter("strike", tickerOption[2]);
-                    request.AddQueryParameter("right", tickerOption[3]);
+                    queryParameters["root"] = tickerOption[0];
+                    queryParameters["exp"] = tickerOption[1];
+                    queryParameters["strike"] = tickerOption[2];
+                    queryParameters["right"] = tickerOption[3];
                     break;
                 default:
                     throw new NotImplementedException($"{nameof(ThetaDataProvider)}.{nameof(GetSymbolHistoryQueryParametersBySymbol)}: Security type '{symbol.SecurityType}' is not implemented.");
             }
 
-            return request;
+            return queryParameters;
         }
 
         /// <summary>
