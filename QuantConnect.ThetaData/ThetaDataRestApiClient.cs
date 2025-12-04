@@ -69,9 +69,10 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <param name="rateGate">Rate gate for controlling request rate.</param>
         public ThetaDataRestApiClient(RateGate rateGate)
         {
+            var baseAddress = $"{_restApiBaseUrl}{ApiVersion}/";
             _httpClient = new HttpClient
             {
-                BaseAddress = new Uri(_restApiBaseUrl + ApiVersion),
+                BaseAddress = new Uri(baseAddress),
                 Timeout = TimeSpan.FromSeconds(30)
             };
             _rateGate = rateGate;
@@ -286,11 +287,12 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <returns>The complete URI string.</returns>
         private string BuildRequestUri(string endpoint, Dictionary<string, string> queryParameters)
         {
+            // Trim leading slashes
+            endpoint = endpoint.TrimStart('/');
             if (queryParameters == null || queryParameters.Count == 0)
             {
                 return endpoint;
             }
-
             var queryString = string.Join("&", queryParameters.Select(kvp => $"{Uri.EscapeDataString(kvp.Key)}={Uri.EscapeDataString(kvp.Value)}"));
             return $"{endpoint}?{queryString}";
         }
