@@ -227,11 +227,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             var period = resolution.ToTimeSpan();
             foreach (var prices in _restApiClient.ExecuteRequest<BaseResponse<PriceResponse>>(endpoint, queryParameters))
             {
-                if (prices.Response == null)
-                {
-                    continue;
-                }
-
                 if (resolution == Resolution.Tick)
                 {
                     foreach (var price in prices.Response)
@@ -327,11 +322,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         {
             foreach (var openInterests in _restApiClient.ExecuteRequest<BaseResponse<OpenInterestResponse>>(endpoint, queryParameters))
             {
-                if (openInterests.Response == null)
-                {
-                    continue;
-                }
-
                 foreach (var openInterest in openInterests.Response)
                 {
                     yield return new OpenInterest(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(openInterest.DateTimeMilliseconds, symbolExchangeTimeZone), symbol, openInterest.OpenInterest);
@@ -354,11 +344,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
                 foreach (var trades in _restApiClient.ExecuteRequest<BaseResponse<TradeResponse>>(endpoint, modifiedParams))
                 {
-                    if (trades.Response == null)
-                    {
-                        continue;
-                    }
-
                     foreach (var trade in trades.Response)
                     {
                         yield return new Tick(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(trade.DateTimeMilliseconds, symbolExchangeTimeZone), symbol, trade.Condition.ToStringInvariant(), trade.Exchange.TryGetExchangeOrDefault(), trade.Size, trade.Price);
@@ -371,11 +356,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         {
             foreach (var trades in _restApiClient.ExecuteRequest<BaseResponse<OpenHighLowCloseResponse>>(endpoint, queryParameters))
             {
-                if (trades.Response == null)
-                {
-                    continue;
-                }
-
                 foreach (var trade in trades.Response)
                 {
                     // If Open|High|Low|Close - prices zero, low trade activity, empty result, low volatility.
@@ -393,11 +373,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         {
             foreach (var quotes in _restApiClient.ExecuteRequest<BaseResponse<QuoteResponse>>(endpoint, queryParameters))
             {
-                if (quotes.Response == null)
-                {
-                    continue;
-                }
-
                 foreach (var quote in quotes.Response)
                 {
                     // If Ask/Bid - prices/sizes zero, low quote activity, empty result, low volatility.
@@ -415,11 +390,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         {
             foreach (var endOfDays in _restApiClient.ExecuteRequest<BaseResponse<EndOfDayReportResponse>>(endpoint, queryParameters))
             {
-                if (endOfDays.Response == null)
-                {
-                    continue;
-                }
-
                 foreach (var endOfDay in endOfDays.Response)
                 {
                     if (validateEmptyResponse(endOfDay))

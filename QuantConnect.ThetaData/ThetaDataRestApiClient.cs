@@ -21,6 +21,7 @@ using System.Collections.Concurrent;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Wrappers;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Interfaces;
+using System.Web;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
 {
@@ -121,7 +122,8 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <param name="queryParameters">Query parameters for the request.</param>
         /// <returns>An enumerable collection of objects that implement the specified base response interface.</returns>
         /// <exception cref="Exception">Thrown when an error occurs during the execution of the request or when the response is invalid.</exception>
-        private async IAsyncEnumerable<T?> ExecuteRequestWithPaginationAsync<T>(string endpoint, Dictionary<string, string> queryParameters) where T : IBaseResponse
+        private async IAsyncEnumerable<T?> ExecuteRequestWithPaginationAsync<T>(string endpoint, Dictionary<string, string> queryParameters)
+            where T : IBaseResponse
         {
             var retryCount = 0;
             var currentEndpoint = endpoint;
@@ -135,8 +137,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 _rateGate?.WaitToProceed();
 
                 T? result = default;
-                bool shouldBreak = false;
-                bool shouldContinue = false;
 
                 using (StopwatchWrapper.StartIfEnabled($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: Executed request to {currentEndpoint}"))
                 {
@@ -147,40 +147,46 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                         // docs: https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/3ucp87xxgy8d3-error-codes
                         if ((int)response.StatusCode == 472)
                         {
-                            Log.Debug($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}:No data found for the specified request (Status Code: 472) by {requestUri}");
-                            shouldBreak = true;
+                            Log.Debug($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: No data found for the specified request (Status Code: 472) by {requestUri}");
+                            // No more data, exit the iterator
+                            yield break;
                         }
-                        else if (!response.IsSuccessStatusCode)
+
+                        if (!response.IsSuccessStatusCode)
                         {
                             if (retryCount < MaxRequestRetries)
                             {
                                 retryCount++;
                                 await Task.Delay(1000 * retryCount).ConfigureAwait(false);
-                                shouldContinue = true;
+                                // Retry the same request
+                                continue;
                             }
-                            else
-                            {
-                                throw new Exception($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: Request failed with status code {response.StatusCode} for {currentEndpoint}. Reason: {response.ReasonPhrase}");
-                            }
+
+                            throw new Exception($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: Request failed with status code {response.StatusCode} for {currentEndpoint}. Reason: {response.ReasonPhrase}");
+                        }
+
+                        var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                        result = JsonConvert.DeserializeObject<T>(content);
+
+                        if (result?.Header.NextPage != null)
+                        {
+                            var nextPageUri = new Uri(result.Header.NextPage);
+                            currentEndpoint = nextPageUri.AbsolutePath.Replace(ApiVersion, string.Empty);
+
+                            // Parse next page query parameters
+                            var parsed = HttpUtility.ParseQueryString(nextPageUri.Query);
+                            currentQueryParams = parsed.AllKeys
+                                .Where(k => k != null)
+                                .ToDictionary(k => k!, k => parsed[k] ?? string.Empty);
                         }
                         else
                         {
-                            var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                            result = JsonConvert.DeserializeObject<T>(content);
-
-                            if (result?.Header.NextPage != null)
-                            {
-                                var nextPageUri = new Uri(result.Header.NextPage);
-                                currentEndpoint = nextPageUri.AbsolutePath.Replace(ApiVersion, string.Empty);
-                                currentQueryParams = ParseQueryString(nextPageUri.Query);
-                            }
-                            else
-                            {
-                                currentEndpoint = null;
-                            }
-
-                            retryCount = 0; // Reset retry count on success
+                            // No more pages
+                            currentEndpoint = null;
                         }
+
+                        // Reset retry count on success
+                        retryCount = 0;
                     }
                     catch (HttpRequestException ex)
                     {
@@ -188,27 +194,16 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                         {
                             retryCount++;
                             await Task.Delay(1000 * retryCount).ConfigureAwait(false);
-                            shouldContinue = true;
+                            // Retry the same request
+                            continue;
                         }
-                        else
-                        {
-                            throw new Exception($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: HTTP request failed for {currentEndpoint}. Error: {ex.Message}", ex);
-                        }
+
+                        throw new Exception($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: HTTP request failed for {currentEndpoint}. Error: {ex.Message}", ex);
                     }
                     catch (TaskCanceledException ex)
                     {
                         throw new Exception($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: Request timeout for {currentEndpoint}. Error: {ex.Message}", ex);
                     }
-                }
-
-                if (shouldBreak)
-                {
-                    yield break;
-                }
-
-                if (shouldContinue)
-                {
-                    continue;
                 }
 
                 if (result != null)
@@ -264,7 +259,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             {
                 var (dateRange, index) = item;
                 var modifiedParams = new Dictionary<string, string>(queryParameters);
-
                 modifiedParams[RequestParameters.StartDate] = dateRange.startDate.ConvertToThetaDataDateFormat();
                 modifiedParams[RequestParameters.EndDate] = dateRange.endDate.ConvertToThetaDataDateFormat();
 
@@ -280,50 +274,32 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         }
 
         /// <summary>
-        /// Builds a complete request URI with query parameters.
+        /// Builds a complete request URI with query parameters
         /// </summary>
         /// <param name="endpoint">The API endpoint.</param>
         /// <param name="queryParameters">Query parameters to append.</param>
-        /// <returns>The complete URI string.</returns>
-        private string BuildRequestUri(string endpoint, Dictionary<string, string> queryParameters)
+        /// <returns>The complete URI.</returns>
+        private Uri BuildRequestUri(string endpoint, Dictionary<string, string> queryParameters)
         {
             // Trim leading slashes
             endpoint = endpoint.TrimStart('/');
-            if (queryParameters == null || queryParameters.Count == 0)
+
+            // Create URI from base address and endpoint
+            var baseUri = _httpClient.BaseAddress ?? new Uri(string.Empty);
+            var uriBuilder = new UriBuilder(new Uri(baseUri, endpoint));
+
+            if (queryParameters != null && queryParameters.Count > 0)
             {
-                return endpoint;
-            }
-            var queryString = string.Join("&", queryParameters.Select(kvp => $"{Uri.EscapeDataString(kvp.Key)}={Uri.EscapeDataString(kvp.Value)}"));
-            return $"{endpoint}?{queryString}";
-        }
-
-        /// <summary>
-        /// Parses a query string into a dictionary of parameters.
-        /// </summary>
-        /// <param name="queryString">The query string to parse.</param>
-        /// <returns>A dictionary of query parameters.</returns>
-        private Dictionary<string, string> ParseQueryString(string queryString)
-        {
-            var result = new Dictionary<string, string>();
-
-            if (string.IsNullOrWhiteSpace(queryString))
-            {
-                return result;
-            }
-
-            queryString = queryString.TrimStart('?');
-            var pairs = queryString.Split('&');
-
-            foreach (var pair in pairs)
-            {
-                var keyValue = pair.Split('=');
-                if (keyValue.Length == 2)
+                // Use HttpUtility to properly encode query parameters
+                var query = HttpUtility.ParseQueryString(string.Empty);
+                foreach (var kvp in queryParameters)
                 {
-                    result[Uri.UnescapeDataString(keyValue[0])] = Uri.UnescapeDataString(keyValue[1]);
+                    query[kvp.Key] = kvp.Value;
                 }
+                uriBuilder.Query = query.ToString();
             }
 
-            return result;
+            return uriBuilder.Uri;
         }
 
         /// <summary>

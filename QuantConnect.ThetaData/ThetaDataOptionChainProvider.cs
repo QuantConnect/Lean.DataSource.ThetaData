@@ -76,7 +76,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             var optionStyle = optionsSecurityType.DefaultOptionStyle();
 
             // just using quote, which is the most inclusive
-            var endpoint = "/list/contracts/option/quote";
+            const string endpoint = "/list/contracts/option/quote";
             var queryParameters = new Dictionary<string, string>
             {
                 [RequestParameters.StartDate] = date.ConvertToThetaDataDateFormat(),
