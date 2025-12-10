@@ -74,7 +74,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             _httpClient = new HttpClient
             {
                 BaseAddress = new Uri(baseAddress),
-                Timeout = TimeSpan.FromSeconds(30)
+                Timeout = TimeSpan.FromMinutes(5)
             };
             _rateGate = rateGate;
         }
