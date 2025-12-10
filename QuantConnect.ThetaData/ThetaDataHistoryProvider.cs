@@ -470,7 +470,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             {
                 TickType.Trade => GetTradeResourceUrl(securityType, resolution),
                 TickType.Quote => GetQuoteResourceUrl(securityType, resolution),
-                TickType.OpenInterest when securityType == SecurityType.Option => "/hist/option/open_interest",
+                TickType.OpenInterest when securityType == SecurityType.Option => "hist/option/open_interest",
                 _ => throw new ArgumentException($"{nameof(ThetaDataProvider)}.{nameof(GetResourceUrlHistoryData)}: Invalid tick type: {tickType}.")
             };
         }
@@ -503,9 +503,9 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         {
             return securityType switch
             {
-                SecurityType.Index => "/hist/index/price",
-                SecurityType.Equity => "/hist/stock/trade",
-                SecurityType.IndexOption or SecurityType.Option => "/hist/option/trade",
+                SecurityType.Index => "hist/index/price",
+                SecurityType.Equity => "hist/stock/trade",
+                SecurityType.IndexOption or SecurityType.Option => "hist/option/trade",
                 _ => throw new NotImplementedException($"{nameof(ThetaDataProvider)}.{nameof(GetTradeTickResourceUrl)}: Trade tick resource URL not implemented for security type: {securityType}.")
             };
         }
@@ -520,9 +520,9 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         {
             return securityType switch
             {
-                SecurityType.Index => "/hist/index/price",
-                SecurityType.Equity => "/hist/stock/ohlc",
-                SecurityType.IndexOption or SecurityType.Option => "/hist/option/ohlc",
+                SecurityType.Index => "hist/index/price",
+                SecurityType.Equity => "hist/stock/ohlc",
+                SecurityType.IndexOption or SecurityType.Option => "hist/option/ohlc",
                 _ => throw new NotImplementedException($"{nameof(ThetaDataProvider)}.{nameof(GetTradeIntradayResourceUrl)}: Trade intraday resource URL not implemented for security type: {securityType}.")
             };
         }
@@ -537,9 +537,9 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         {
             return securityType switch
             {
-                SecurityType.Index => "/hist/index/eod",
-                SecurityType.Equity => "/hist/stock/eod",
-                SecurityType.IndexOption or SecurityType.Option => "/hist/option/eod",
+                SecurityType.Index => "hist/index/eod",
+                SecurityType.Equity => "hist/stock/eod",
+                SecurityType.IndexOption or SecurityType.Option => "hist/option/eod",
                 _ => throw new NotImplementedException($"{nameof(ThetaDataProvider)}.{nameof(GetTradeDailyResourceUrl)}: Trade daily resource URL not implemented for security type: {securityType}.")
             };
         }
@@ -572,8 +572,8 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         {
             return securityType switch
             {
-                SecurityType.Equity => "/hist/stock/quote",
-                SecurityType.IndexOption or SecurityType.Option => "/hist/option/quote",
+                SecurityType.Equity => "hist/stock/quote",
+                SecurityType.IndexOption or SecurityType.Option => "hist/option/quote",
                 _ => throw new NotImplementedException($"{nameof(ThetaDataProvider)}.{nameof(GetQuoteTickResourceUrl)}: Quote tick resource URL not implemented for security type: {securityType}.")
             };
         }
@@ -588,9 +588,9 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         {
             return securityType switch
             {
-                SecurityType.Index => "/hist/index/price",
-                SecurityType.Equity => "/hist/stock/quote",
-                SecurityType.IndexOption or SecurityType.Option => "/hist/option/quote",
+                SecurityType.Index => "hist/index/price",
+                SecurityType.Equity => "hist/stock/quote",
+                SecurityType.IndexOption or SecurityType.Option => "hist/option/quote",
                 _ => throw new NotImplementedException($"{nameof(ThetaDataProvider)}.{nameof(GetQuoteIntradayResourceUrl)}: Quote intraday resource URL not implemented for security type: {securityType}.")
             };
         }
@@ -605,8 +605,8 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         {
             return securityType switch
             {
-                SecurityType.Equity => "/hist/stock/eod",
-                SecurityType.IndexOption or SecurityType.Option => "/hist/option/eod",
+                SecurityType.Equity => "hist/stock/eod",
+                SecurityType.IndexOption or SecurityType.Option => "hist/option/eod",
                 _ => throw new NotImplementedException($"{nameof(ThetaDataProvider)}.{nameof(GetQuoteDailyResourceUrl)}: Quote daily resource URL not implemented for security type: {securityType}.")
             };
         }

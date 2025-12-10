@@ -281,12 +281,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <returns>The complete URI.</returns>
         private Uri BuildRequestUri(string endpoint, Dictionary<string, string> queryParameters)
         {
-            // Trim leading slashes
-            endpoint = endpoint.TrimStart('/');
-
-            // Create URI from base address and endpoint
-            var baseUri = _httpClient.BaseAddress ?? new Uri(string.Empty);
-            var uriBuilder = new UriBuilder(new Uri(baseUri, endpoint));
+            // Trim leading slashes only if the string starts with /
+            if (endpoint.StartsWith('/'))
+            {
+                endpoint = endpoint.TrimStart('/');
+            }
 
             if (queryParameters != null && queryParameters.Count > 0)
             {
@@ -296,10 +295,10 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 {
                     query[kvp.Key] = kvp.Value;
                 }
-                uriBuilder.Query = query.ToString();
+                return new Uri($"{endpoint}?{query}", UriKind.Relative);
             }
 
-            return uriBuilder.Uri;
+            return new Uri(endpoint, UriKind.Relative);
         }
 
         /// <summary>
