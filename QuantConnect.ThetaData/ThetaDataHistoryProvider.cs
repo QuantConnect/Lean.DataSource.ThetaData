@@ -333,14 +333,12 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         {
             var startDateTimeET = startDateTimeUtc.ConvertFromUtc(TimeZoneThetaData);
             var endDateTimeET = endDateTimeUtc.ConvertFromUtc(TimeZoneThetaData);
+            var modifiedParams = new Dictionary<string, string>(queryParameters);
 
             foreach (var dateRange in ThetaDataExtensions.GenerateDateRangesWithInterval(startDateTimeET, endDateTimeET))
             {
-                var modifiedParams = new Dictionary<string, string>(queryParameters)
-                {
-                    [RequestParameters.StartDate] = dateRange.startDate.ConvertToThetaDataDateFormat(),
-                    [RequestParameters.EndDate] = dateRange.endDate.ConvertToThetaDataDateFormat()
-                };
+                modifiedParams[RequestParameters.StartDate] = dateRange.startDate.ConvertToThetaDataDateFormat();
+                modifiedParams[RequestParameters.EndDate] = dateRange.endDate.ConvertToThetaDataDateFormat();
 
                 foreach (var trades in _restApiClient.ExecuteRequest<BaseResponse<TradeResponse>>(endpoint, modifiedParams))
                 {

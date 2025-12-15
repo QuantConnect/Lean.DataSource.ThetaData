@@ -22,6 +22,7 @@ using QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Wrappers;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Interfaces;
 using System.Web;
+using System.Collections.Specialized;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
 {
@@ -127,7 +128,13 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         {
             var retryCount = 0;
             var currentEndpoint = endpoint;
-            var currentQueryParams = new Dictionary<string, string>(queryParameters);
+            var currentQueryParams = HttpUtility.ParseQueryString(string.Empty);
+
+            // Initialize current query parameters
+            foreach (var kvp in queryParameters)
+            {
+                currentQueryParams[kvp.Key] = kvp.Value;
+            }
 
             while (currentEndpoint != null)
             {
@@ -172,12 +179,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                         {
                             var nextPageUri = new Uri(result.Header.NextPage);
                             currentEndpoint = nextPageUri.AbsolutePath.Replace(ApiVersion, string.Empty);
-
-                            // Parse next page query parameters
-                            var parsed = HttpUtility.ParseQueryString(nextPageUri.Query);
-                            currentQueryParams = parsed.AllKeys
-                                .Where(k => k != null)
-                                .ToDictionary(k => k!, k => parsed[k] ?? string.Empty);
+                            currentQueryParams = HttpUtility.ParseQueryString(nextPageUri.Query);
                         }
                         else
                         {
@@ -279,7 +281,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <param name="endpoint">The API endpoint.</param>
         /// <param name="queryParameters">Query parameters to append.</param>
         /// <returns>The complete URI.</returns>
-        private Uri BuildRequestUri(string endpoint, Dictionary<string, string> queryParameters)
+        private Uri BuildRequestUri(string endpoint, NameValueCollection queryParameters)
         {
             // Trim leading slashes only if the string starts with /
             if (endpoint.StartsWith('/'))
@@ -289,13 +291,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
             if (queryParameters != null && queryParameters.Count > 0)
             {
-                // Use HttpUtility to properly encode query parameters
-                var query = HttpUtility.ParseQueryString(string.Empty);
-                foreach (var kvp in queryParameters)
-                {
-                    query[kvp.Key] = kvp.Value;
-                }
-                return new Uri($"{endpoint}?{query}", UriKind.Relative);
+                return new Uri($"{endpoint}?{queryParameters}", UriKind.Relative);
             }
 
             return new Uri(endpoint, UriKind.Relative);
