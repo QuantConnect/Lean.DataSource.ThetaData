@@ -42,16 +42,9 @@ namespace QuantConnect.Lean.DataSource.ThetaData.Tests
             Assert.IsNotNull(history);
             Assert.IsNotEmpty(history);
 
-            if (resolution < Resolution.Daily)
-            {
-                Assert.That(history.First().Time.Date, Is.EqualTo(startDate.ConvertFromUtc(TimeZoneThetaData).Date));
-                Assert.That(history.Last().Time.Date, Is.EqualTo(endDate.ConvertFromUtc(TimeZoneThetaData).Date));
-            }
-            else
-            {
-                Assert.That(history.First().Time.Date, Is.GreaterThanOrEqualTo(startDate.ConvertFromUtc(TimeZoneThetaData).Date));
-                Assert.That(history.Last().Time.Date, Is.LessThanOrEqualTo(endDate.ConvertFromUtc(TimeZoneThetaData).Date));
-            }
+
+            Assert.That(history.First().Time.Date, Is.GreaterThanOrEqualTo(startDate.ConvertFromUtc(TimeZoneThetaData).Date));
+            Assert.That(history.Last().Time.Date, Is.LessThanOrEqualTo(endDate.ConvertFromUtc(TimeZoneThetaData).Date));
 
             switch (tickType)
             {
