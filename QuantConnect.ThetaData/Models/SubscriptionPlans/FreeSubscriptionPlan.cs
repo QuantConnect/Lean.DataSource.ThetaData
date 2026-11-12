@@ -26,5 +26,12 @@ public class FreeSubscriptionPlan : ISubscriptionPlan
 
     public uint MaxStreamingContracts => 0;
 
-    public RateGate RateGate => new(30, TimeSpan.FromMinutes(1));
+    /// <summary>
+    /// The ThetaData docs give 2 limits for free accounts: "20-requests/minute" in the text and "30 reqs/min" in a table.
+    /// The lower one is used. One instance per plan, so every caller shares the same limit.
+    /// </summary>
+    public RateGate RateGate { get; } = new(20, TimeSpan.FromMinutes(1));
+
+    /// <inheritdoc />
+    public int MaxConcurrentRequests => 1;
 }

@@ -123,6 +123,16 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         }
 
         /// <summary>
+        /// Creates a provider that sends its REST requests through the given client. Tests use it with a fake HTTP handler.
+        /// </summary>
+        /// <param name="pricePlan">The ThetaData plan: Free, Value, Standard, or Pro.</param>
+        /// <param name="restApiClient">The REST client.</param>
+        public ThetaDataProvider(string pricePlan, ThetaDataRestApiClient restApiClient)
+        {
+            Initialize(pricePlan, restApiClient);
+        }
+
+        /// <summary>
         /// Event handler for WebSocket errors in the ThetaDataWebSocketClientWrapper.
         /// </summary>
         /// <param name="_">The sender of the event.</param>
@@ -143,6 +153,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         {
             _webSocketClient?.CloseWebSocketConnection();
             _dataAggregator?.DisposeSafely();
+            _restApiClient?.DisposeSafely();
         }
 
         /// <inheritdoc />
@@ -289,7 +300,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// symbol mapper, option chain provider, and WebSocket client wrapper. It also configures 
         /// the subscription manager to handle subscription and unsubscription requests.
         /// </remarks>
-        private void Initialize(string pricePlan)
+        private void Initialize(string pricePlan, ThetaDataRestApiClient? restApiClient = null)
         {
             _dataAggregator = Composer.Instance.GetPart<IDataAggregator>();
             if (_dataAggregator == null)
@@ -301,10 +312,13 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             _userSubscriptionPlan = GetUserSubscriptionPlan(pricePlan);
             _initialized = true;
 
-            _restApiClient = new ThetaDataRestApiClient(_userSubscriptionPlan.RateGate!);
+            // ThetaData rejects more concurrent requests than the plan allows: https://thetadata.net/docs/Articles/Data-And-Requests/Concurrent-Requests.html
+            var maxConcurrentRequests = Config.GetInt("thetadata-max-concurrent-requests", _userSubscriptionPlan.MaxConcurrentRequests);
+            _restApiClient = restApiClient ?? new ThetaDataRestApiClient(_userSubscriptionPlan.RateGate, maxConcurrentRequests);
+            _optionEndOfDayLoader = new ThetaDataOptionEndOfDayLoader(_restApiClient);
             _symbolMapper = new ThetaDataSymbolMapper();
 
-            _optionChainProvider = new ThetaDataOptionChainProvider(_symbolMapper, _restApiClient);
+            _optionChainProvider = new ThetaDataOptionChainProvider(_symbolMapper, _restApiClient, _optionEndOfDayLoader);
 
             _webSocketClient = new ThetaDataWebSocketClientWrapper(_symbolMapper, _userSubscriptionPlan.MaxStreamingContracts, OnMessage, OnError);
             _levelOneServiceManager = new LevelOneServiceManager(

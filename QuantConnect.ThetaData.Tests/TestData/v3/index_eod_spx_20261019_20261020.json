@@ -1,0 +1,7 @@
+{
+	"response": [
+		{"ask_size":0,"last_trade":"2026-10-19T16:04:39.000","created":"2026-10-19T17:15:04.214","ask_condition":0,"count":0,"volume":0,"high":7731.18,"low":7684.79,"bid_size":0,"ask_exchange":0,"bid_exchange":0,"ask":0.00,"bid":0.00,"bid_condition":0,"close":7690.73,"open":7702.77},
+		{"ask_size":0,"last_trade":"2026-10-20T16:04:26.000","created":"2026-10-20T17:15:07.135","ask_condition":0,"count":0,"volume":0,"high":7748.42,"low":7668.03,"bid_size":0,"ask_exchange":0,"bid_exchange":0,"ask":0.00,"bid":0.00,"bid_condition":0,"close":7712.57,"open":7679.01}
+	]
+}
+

@@ -27,4 +27,7 @@ public class ProSubscriptionPlan : ISubscriptionPlan
     public uint MaxStreamingContracts => 15_000;
 
     public RateGate? RateGate => null;
+
+    /// <inheritdoc />
+    public int MaxConcurrentRequests => 8;
 }

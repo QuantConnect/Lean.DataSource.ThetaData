@@ -1,0 +1,172 @@
+{
+ "response": [
+  {
+   "contract": {
+    "symbol": "SPY",
+    "expiration": "2026-10-20",
+    "right": "CALL",
+    "strike": 760.0
+   },
+   "data": [
+    {
+     "ask_size": 10,
+     "last_trade": "2026-10-20T16:14:09.879",
+     "created": "2026-10-20T17:15:44.979",
+     "ask_condition": 50,
+     "count": 915,
+     "volume": 5188,
+     "high": 12.19,
+     "low": 4.84,
+     "bid_size": 1,
+     "ask_exchange": 76,
+     "bid_exchange": 1,
+     "ask": 9.77,
+     "bid": 9.65,
+     "bid_condition": 50,
+     "close": 9.76,
+     "open": 6.04
+    }
+   ]
+  },
+  {
+   "contract": {
+    "symbol": "SPY",
+    "expiration": "2026-10-20",
+    "right": "PUT",
+    "strike": 760.0
+   },
+   "data": [
+    {
+     "ask_size": 1048,
+     "last_trade": "2026-10-20T16:06:42.936",
+     "created": "2026-10-20T17:15:44.979",
+     "ask_condition": 50,
+     "count": 10205,
+     "volume": 81070,
+     "high": 0.54,
+     "low": 0.01,
+     "bid_size": 0,
+     "ask_exchange": 31,
+     "bid_exchange": 9,
+     "ask": 0.01,
+     "bid": 0.0,
+     "bid_condition": 50,
+     "close": 0.01,
+     "open": 0.33
+    }
+   ]
+  },
+  {
+   "contract": {
+    "symbol": "SPY",
+    "expiration": "2027-01-15",
+    "right": "CALL",
+    "strike": 1340.0
+   },
+   "data": [
+    {
+     "ask_size": 596,
+     "last_trade": "2026-10-20T00:00:00.000",
+     "created": "2026-10-20T17:15:44.979",
+     "ask_condition": 50,
+     "count": 0,
+     "volume": 0,
+     "high": 0.0,
+     "low": 0.0,
+     "bid_size": 0,
+     "ask_exchange": 6,
+     "bid_exchange": 1,
+     "ask": 0.01,
+     "bid": 0.0,
+     "bid_condition": 50,
+     "close": 0.0,
+     "open": 0.0
+    }
+   ]
+  },
+  {
+   "contract": {
+    "symbol": "SPY",
+    "expiration": "2029-01-19",
+    "right": "CALL",
+    "strike": 370.0
+   },
+   "data": [
+    {
+     "ask_size": 1,
+     "last_trade": "2026-10-20T00:00:00.000",
+     "created": "2026-10-20T17:15:44.979",
+     "ask_condition": 50,
+     "count": 0,
+     "volume": 0,
+     "high": 0.0,
+     "low": 0.0,
+     "bid_size": 2,
+     "ask_exchange": 22,
+     "bid_exchange": 11,
+     "ask": 432.57,
+     "bid": 428.0,
+     "bid_condition": 50,
+     "close": 0.0,
+     "open": 0.0
+    }
+   ]
+  },
+  {
+   "contract": {
+    "symbol": "SPY",
+    "expiration": "2028-01-21",
+    "right": "CALL",
+    "strike": 380.0
+   },
+   "data": [
+    {
+     "ask_size": 1,
+     "last_trade": "2026-10-20T11:54:15.424",
+     "created": "2026-10-20T17:15:44.979",
+     "ask_condition": 50,
+     "count": 1,
+     "volume": 2,
+     "high": 406.97,
+     "low": 406.97,
+     "bid_size": 2,
+     "ask_exchange": 22,
+     "bid_exchange": 46,
+     "ask": 409.27,
+     "bid": 405.0,
+     "bid_condition": 50,
+     "close": 406.97,
+     "open": 406.97
+    }
+   ]
+  },
+  {
+   "contract": {
+    "symbol": "SPY",
+    "expiration": "2028-01-21",
+    "right": "PUT",
+    "strike": 380.0
+   },
+   "data": [
+    {
+     "ask_size": 252,
+     "last_trade": "2026-10-20T15:21:47.478",
+     "created": "2026-10-20T17:15:44.979",
+     "ask_condition": 50,
+     "count": 1,
+     "volume": 1,
+     "high": 3.06,
+     "low": 3.06,
+     "bid_size": 296,
+     "ask_exchange": 6,
+     "bid_exchange": 6,
+     "ask": 3.06,
+     "bid": 3.02,
+     "bid_condition": 50,
+     "close": 3.06,
+     "open": 3.06
+    }
+   ]
+  }
+ ]
+}

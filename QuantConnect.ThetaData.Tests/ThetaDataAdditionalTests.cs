@@ -34,8 +34,10 @@ public class ThetaDataAdditionalTests
 
         var expectedRanges = new List<(DateTime startDate, DateTime endDate)>
         {
-            (new DateTime(2020, 07, 18), new DateTime(2020, 10, 16)),
-            (new DateTime(2020, 10, 17), new DateTime(2021, 01, 14)),
+            // Each range holds exactly 90 days, both ends inclusive.
+            (new DateTime(2020, 07, 18), new DateTime(2020, 10, 15)),
+            (new DateTime(2020, 10, 16), new DateTime(2021, 01, 13)),
+            (new DateTime(2021, 01, 14), new DateTime(2021, 01, 14)),
         };
 
         var actualRanges = new List<(DateTime startDate, DateTime endDate)>(ThetaDataExtensions.GenerateDateRangesWithInterval(startDate, endDate, intervalDays));
@@ -59,8 +61,11 @@ public class ThetaDataAdditionalTests
 
         var expectedRanges = new List<(DateTime startDate, DateTime endDate)>
         {
-            (new DateTime(2024, 07, 26), new DateTime(2024, 07, 27)),
-            (new DateTime(2024, 07, 28), new DateTime(2024, 07, 29)),
+            // v3 takes an interval below 1 minute for 1 day per request, so each range is 1 day.
+            (new DateTime(2024, 07, 26), new DateTime(2024, 07, 26)),
+            (new DateTime(2024, 07, 27), new DateTime(2024, 07, 27)),
+            (new DateTime(2024, 07, 28), new DateTime(2024, 07, 28)),
+            (new DateTime(2024, 07, 29), new DateTime(2024, 07, 29)),
             (new DateTime(2024, 07, 30), new DateTime(2024, 07, 30))
         };
 

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -13,30 +13,26 @@
  * limitations under the License.
 */
 
-using Newtonsoft.Json;
-using QuantConnect.Lean.DataSource.ThetaData.Converters;
-
-namespace QuantConnect.Lean.DataSource.ThetaData.Models.Common;
+namespace QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
 
 /// <summary>
-/// Represents the base header response.
+/// A ThetaData request that failed. A request with no data does not throw: it returns no rows.
 /// </summary>
-public readonly struct BaseHeaderResponse
+public class ThetaDataRequestException : Exception
 {
     /// <summary>
-    /// Gets the next page value.
+    /// The HTTP status code, or null when no response arrived.
     /// </summary>
-    [JsonProperty("next_page")]
-    [JsonConverter(typeof(ThetaDataNullStringConverter))]
-    public string NextPage { get; }
+    public int? StatusCode { get; }
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="BaseHeaderResponse"/> struct.
+    /// True when the account's plan does not include the data (HTTP 403 or ThetaData code 471).
     /// </summary>
-    /// <param name="nextPage">The next page value.</param>
-    [JsonConstructor]
-    public BaseHeaderResponse(string nextPage)
+    public bool IsEntitlementError => StatusCode is 403 or 471;
+
+    public ThetaDataRequestException(string message, int? statusCode = null, Exception? innerException = null)
+        : base(message, innerException)
     {
-        NextPage = nextPage;
+        StatusCode = statusCode;
     }
 }

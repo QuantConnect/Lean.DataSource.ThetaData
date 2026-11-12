@@ -18,10 +18,11 @@ using QuantConnect.Data;
 using QuantConnect.Logging;
 using QuantConnect.Interfaces;
 using QuantConnect.Data.Market;
+using QuantConnect.Securities;
+using System.Collections.Concurrent;
 using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Lean.Engine.HistoricalData;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
-using QuantConnect.Lean.DataSource.ThetaData.Models.Common;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Interfaces;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
@@ -34,10 +35,12 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <summary>
         /// Represents the time zone used by ThetaData, which returns time in the New York (EST) Time Zone with daylight savings time.
         /// </summary>
-        /// <remarks>
-        /// <see href="https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/ke230k18g7fld-trading-hours"/>
-        /// </remarks>
-        private static DateTimeZone TimeZoneThetaData = TimeZones.NewYork;
+        private static readonly DateTimeZone TimeZoneThetaData = ThetaDataBarConverter.ThetaDataTimeZone;
+
+        /// <summary>
+        /// Loads the end-of-day rows of a whole option chain in 1 request.
+        /// </summary>
+        private ThetaDataOptionEndOfDayLoader _optionEndOfDayLoader;
 
         /// <summary>
         /// Indicates whether the warning for invalid <see cref="SecurityType"/> has been fired.
@@ -63,10 +66,14 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// Indicates whether a warning has been triggered for an invalid TickType request for Index securities.
         /// </summary>
         /// <remarks>
-        /// This flag is set to true when an invalid TickType request is made for Index securities. 
-        /// Specifically, only 'Trade' TickType is supported for Index securities, and this warning helps to prevent invalid requests.
+        /// Only 'Trade' TickType is supported for Index securities, and this warning helps to prevent invalid requests.
         /// </remarks>
         private volatile bool _invalidIndexTickTypeWarningFired;
+
+        /// <summary>
+        /// The endpoints the plan denied, each logged once.
+        /// </summary>
+        private readonly ConcurrentDictionary<string, bool> _entitlementWarningsFired = new();
 
         /// <inheritdoc />
         public override void Initialize(HistoryProviderInitializeParameters parameters)
@@ -79,7 +86,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             foreach (var request in requests)
             {
                 var history = GetHistory(request);
-
                 var subscription = CreateSubscription(request, history);
                 if (!subscription.MoveNext())
                 {
@@ -96,6 +102,11 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             return CreateSliceEnumerableFromSubscriptions(subscriptions, sliceTimeZone);
         }
 
+        /// <summary>
+        /// Gets the history of 1 request.
+        /// </summary>
+        /// <returns>The data, or null when the request is not supported or ThetaData has no data the plan allows.</returns>
+        /// <exception cref="ThetaDataRequestException">ThetaData failed to answer, for a reason other than the plan.</exception>
         public IEnumerable<BaseData>? GetHistory(HistoryRequest historyRequest)
         {
             if (!_userSubscriptionPlan.AccessibleResolutions.Contains(historyRequest.Resolution))
@@ -109,30 +120,22 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             }
 
             var startDateTimeUtc = historyRequest.StartTimeUtc;
-            if (_userSubscriptionPlan.FirstAccessDate.Date > historyRequest.StartTimeUtc.Date)
+            // The first date of the plan is an ET date. As UTC midnight it would be the evening before in ET,
+            // the request would ask for that day, and ThetaData would deny the whole range (HTTP 403).
+            var firstAccessUtc = _userSubscriptionPlan.FirstAccessDate.Date.ConvertToUtc(TimeZoneThetaData);
+            if (firstAccessUtc > historyRequest.StartTimeUtc)
             {
                 if (!_invalidStartDateInCurrentSubscriptionWarningFired)
                 {
                     _invalidStartDateInCurrentSubscriptionWarningFired = true;
-                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: The requested start time ({historyRequest.StartTimeUtc.Date}) exceeds the maximum available date ({_userSubscriptionPlan.FirstAccessDate.Date}) allowed by the user's subscription. Using the new adjusted start date: {_userSubscriptionPlan.FirstAccessDate.Date}.");
+                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: The requested start time ({historyRequest.StartTimeUtc.Date}) is before the first date ({_userSubscriptionPlan.FirstAccessDate.Date}) that the user's subscription allows. Using the new adjusted start date: {_userSubscriptionPlan.FirstAccessDate.Date}.");
                 }
                 // Ensures efficient data retrieval by blocking requests outside the user's subscription period, which reduces processing overhead and avoids unnecessary data requests.
-                startDateTimeUtc = _userSubscriptionPlan.FirstAccessDate.Date;
-
+                startDateTimeUtc = firstAccessUtc;
                 if (startDateTimeUtc >= historyRequest.EndTimeUtc)
                 {
                     return null;
                 }
-            }
-
-            if (!CanSubscribe(historyRequest.Symbol))
-            {
-                if (!_invalidSecurityTypeWarningFired)
-                {
-                    _invalidSecurityTypeWarningFired = true;
-                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Unsupported SecurityType '{historyRequest.Symbol.SecurityType}' for symbol '{historyRequest.Symbol}'");
-                }
-                return null;
             }
 
             if (startDateTimeUtc >= historyRequest.EndTimeUtc)
@@ -145,64 +148,129 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 return null;
             }
 
+            if (!CanSubscribe(historyRequest.Symbol))
+            {
+                if (!_invalidSecurityTypeWarningFired)
+                {
+                    _invalidSecurityTypeWarningFired = true;
+                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Unsupported SecurityType '{historyRequest.Symbol.SecurityType}' for symbol '{historyRequest.Symbol}'");
+                }
+                return null;
+            }
+
             if (historyRequest.Symbol.SecurityType == SecurityType.Index && historyRequest.TickType != TickType.Trade)
             {
                 if (!_invalidIndexTickTypeWarningFired)
                 {
                     _invalidIndexTickTypeWarningFired = true;
-                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Request error: For Index securities, only 'Trade' TickType is supported.You requested '{historyRequest.TickType}'.");
+                    Log.Trace($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Request error: For Index securities, only 'Trade' TickType is supported. You requested '{historyRequest.TickType}'.");
                 }
                 return null;
             }
 
-            var queryParameters = new Dictionary<string, string>();
-
-            queryParameters = GetSymbolHistoryQueryParametersBySymbol(queryParameters, historyRequest.Symbol);
-
-            var startDateTimeLocal = startDateTimeUtc.ConvertFromUtc(TimeZoneThetaData);
-            var endDateTimeLocal = historyRequest.EndTimeUtc.ConvertFromUtc(TimeZoneThetaData);
-
-            queryParameters[RequestParameters.StartDate] = startDateTimeLocal.ConvertToThetaDataDateFormat();
-            queryParameters[RequestParameters.EndDate] = endDateTimeLocal.ConvertToThetaDataDateFormat();
-            queryParameters["start_time"] = "0";
-
-            var endpoint = GetResourceUrlHistoryData(historyRequest.Symbol.SecurityType, historyRequest.TickType, historyRequest.Resolution);
-
-            var symbolExchangeTimeZone = historyRequest.Symbol.GetSymbolExchangeTimeZone();
-
-            if (historyRequest.Symbol.SecurityType == SecurityType.Index && historyRequest.Resolution <= Resolution.Hour)
+            if (historyRequest.TickType == TickType.OpenInterest && !historyRequest.Symbol.SecurityType.IsOption())
             {
-                return GetIndexIntradayHistoryData(endpoint, queryParameters, historyRequest.Symbol, historyRequest.Resolution, symbolExchangeTimeZone);
-            }
-            else if (historyRequest.TickType == TickType.OpenInterest)
-            {
-                return GetHistoricalOpenInterestData(endpoint, queryParameters, historyRequest.Symbol, symbolExchangeTimeZone);
+                return null;
             }
 
-            var history = default(IEnumerable<BaseData>);
-            switch (historyRequest.Resolution)
-            {
-                case Resolution.Tick:
-                    history = GetTickHistoryData(endpoint, queryParameters, historyRequest.Symbol, Resolution.Tick, historyRequest.TickType, startDateTimeUtc, historyRequest.EndTimeUtc, symbolExchangeTimeZone);
-                    break;
-                case Resolution.Second:
-                case Resolution.Minute:
-                case Resolution.Hour:
-                    history = GetIntradayHistoryData(endpoint, queryParameters, historyRequest.Symbol, historyRequest.Resolution, historyRequest.TickType, symbolExchangeTimeZone);
-                    break;
-                case Resolution.Daily:
-                    history = GetDailyHistoryData(endpoint, queryParameters, historyRequest.Symbol, historyRequest.Resolution, historyRequest.TickType, symbolExchangeTimeZone);
-                    break;
-                default:
-                    throw new ArgumentException($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Invalid resolution: {historyRequest.Resolution}. Supported resolutions are Tick, Second, Minute, Hour, and Daily.");
-            }
-
+            var history = WhenEntitled(historyRequest.Symbol.SecurityType, historyRequest.TickType, () => GetContractHistory(historyRequest, startDateTimeUtc));
             if (history == null)
             {
                 return null;
             }
 
-            return FilterHistory(history, historyRequest, startDateTimeLocal, endDateTimeLocal);
+            var exchangeTimeZone = historyRequest.ExchangeHours.TimeZone;
+            return FilterHistory(ThetaDataBarConverter.OrderAndRemoveDuplicates(history, historyRequest.Resolution), historyRequest,
+                startDateTimeUtc.ConvertFromUtc(exchangeTimeZone), historyRequest.EndTimeUtc.ConvertFromUtc(exchangeTimeZone));
+        }
+
+        /// <summary>
+        /// Sends the request for 1 stock, index, or option contract, and converts the rows.
+        /// </summary>
+        private List<BaseData> GetContractHistory(HistoryRequest historyRequest, DateTime startDateTimeUtc)
+        {
+            var symbol = historyRequest.Symbol;
+            var securityType = symbol.SecurityType;
+            var resolution = historyRequest.Resolution;
+            var exchangeTimeZone = historyRequest.ExchangeHours.TimeZone;
+
+            var queryParameters = GetSymbolQueryParameters(symbol);
+            queryParameters[RequestParameters.StartDate] = startDateTimeUtc.ConvertFromUtc(TimeZoneThetaData).ConvertToThetaDataDateFormat();
+            // The end time is exclusive. A request that ends at midnight holds no data of that day, so it ends on the day before.
+            var endDateTimeThetaData = historyRequest.EndTimeUtc.ConvertFromUtc(TimeZoneThetaData);
+            var lastDate = endDateTimeThetaData.TimeOfDay == TimeSpan.Zero ? endDateTimeThetaData.AddDays(-1) : endDateTimeThetaData;
+            queryParameters[RequestParameters.EndDate] = lastDate.ConvertToThetaDataDateFormat();
+
+            if (historyRequest.TickType == TickType.OpenInterest)
+            {
+                return _restApiClient.GetRows<OpenInterestRow>(ThetaDataEndpoints.OptionOpenInterest, queryParameters)
+                    .Select(row => (BaseData)ThetaDataBarConverter.ToOpenInterest(row, symbol, exchangeTimeZone)).ToList();
+            }
+
+            if (resolution == Resolution.Daily)
+            {
+                var rows = _restApiClient.GetRows<EndOfDayRow>(ThetaDataEndpoints.EndOfDay(securityType), queryParameters);
+                return historyRequest.TickType == TickType.Quote
+                    ? NotNull(rows.Select(row => ThetaDataBarConverter.ToDailyQuoteBar(row, symbol, exchangeTimeZone)))
+                    : NotNull(rows.Select(row => ThetaDataBarConverter.ToDailyTradeBar(row, symbol, exchangeTimeZone)));
+            }
+
+            SetSessionTimes(queryParameters, securityType, historyRequest.IncludeExtendedMarketHours);
+            var period = resolution.ToTimeSpan();
+
+            if (resolution == Resolution.Tick && historyRequest.TickType == TickType.Trade && securityType != SecurityType.Index)
+            {
+                // The trade endpoint takes no interval, so the client cannot split the date range: request 1 day at a time.
+                var ticks = new List<BaseData>();
+                foreach (var (dayStart, dayEnd) in ThetaDataExtensions.GenerateDateRangesWithInterval(
+                    queryParameters[RequestParameters.StartDate].ConvertFromThetaDataDateFormat(), queryParameters[RequestParameters.EndDate].ConvertFromThetaDataDateFormat(), 1))
+                {
+                    queryParameters[RequestParameters.StartDate] = dayStart.ConvertToThetaDataDateFormat();
+                    queryParameters[RequestParameters.EndDate] = dayEnd.ConvertToThetaDataDateFormat();
+                    ticks.AddRange(NotNull(_restApiClient.GetRows<TradeRow>(ThetaDataEndpoints.Trade(securityType), queryParameters)
+                        .Select(row => ThetaDataBarConverter.ToTradeTick(row, symbol, exchangeTimeZone))));
+                }
+                return ticks;
+            }
+
+            queryParameters[RequestParameters.Interval] = ThetaDataEndpoints.GetInterval(resolution);
+            switch (historyRequest.TickType)
+            {
+                case TickType.Trade when securityType == SecurityType.Index && resolution == Resolution.Tick:
+                    return NotNull(_restApiClient.GetRows<PriceRow>(ThetaDataEndpoints.Trade(securityType), queryParameters)
+                        .Select(row => ThetaDataBarConverter.ToIndexTick(row, symbol, exchangeTimeZone)));
+                case TickType.Trade:
+                    return NotNull(_restApiClient.GetRows<OhlcRow>(ThetaDataEndpoints.Ohlc(securityType), queryParameters)
+                        .Select(row => ThetaDataBarConverter.ToTradeBar(row, symbol, period, exchangeTimeZone)));
+                case TickType.Quote when resolution == Resolution.Tick:
+                    return NotNull(_restApiClient.GetRows<QuoteRow>(ThetaDataEndpoints.Quote(securityType), queryParameters)
+                        .Select(row => ThetaDataBarConverter.ToQuoteTick(row, symbol, exchangeTimeZone)));
+                case TickType.Quote:
+                    return NotNull(_restApiClient.GetRows<QuoteRow>(ThetaDataEndpoints.Quote(securityType), queryParameters)
+                        .Select(row => ThetaDataBarConverter.ToQuoteBar(row, symbol, period, exchangeTimeZone)));
+                default:
+                    throw new ArgumentException($"{nameof(ThetaDataProvider)}.{nameof(GetContractHistory)}: Invalid tick type: {historyRequest.TickType}.");
+            }
+        }
+
+        /// <summary>
+        /// Runs a request. When the plan does not include the data, it logs this once for the endpoint and returns null.
+        /// Any other failure still throws, so a failed request never looks like an empty result.
+        /// </summary>
+        private T? WhenEntitled<T>(SecurityType securityType, TickType tickType, Func<T> request) where T : class
+        {
+            try
+            {
+                return request();
+            }
+            catch (ThetaDataRequestException e) when (e.IsEntitlementError)
+            {
+                if (_entitlementWarningsFired.TryAdd($"{securityType}-{tickType}", true))
+                {
+                    Log.Error($"{nameof(ThetaDataProvider)}.{nameof(GetHistory)}: Your ThetaData plan does not include {securityType} {tickType} data, so no data is returned for it. {e.Message}");
+                }
+                return null;
+            }
         }
 
         private IEnumerable<BaseData> FilterHistory(IEnumerable<BaseData> history, HistoryRequest request, DateTime startTimeLocal, DateTime endTimeLocal)
@@ -210,6 +278,15 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             // cleaning the data before returning it back to user
             foreach (var bar in history)
             {
+                if (request.Resolution == Resolution.Daily)
+                {
+                    if (IsDailyBarInRange(bar.Time, request.ExchangeHours, startTimeLocal, endTimeLocal))
+                    {
+                        yield return bar;
+                    }
+                    continue;
+                }
+
                 if (bar.Time >= startTimeLocal && bar.EndTime <= endTimeLocal)
                 {
                     if (request.ExchangeHours.IsOpen(bar.Time, bar.EndTime, request.IncludeExtendedMarketHours))
@@ -220,406 +297,67 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             }
         }
 
-        public IEnumerable<BaseData>? GetIndexIntradayHistoryData(string endpoint, Dictionary<string, string> queryParameters, Symbol symbol, Resolution resolution, DateTimeZone symbolExchangeTimeZone)
+        /// <summary>
+        /// True when the market close of <paramref name="day"/> is after <paramref name="startLocal"/> and not after <paramref name="endLocal"/>.
+        /// </summary>
+        /// <remarks>
+        /// LEAN treats a daily bar as ending at the market close (the default <c>daily-precise-end-time</c>), not at the midnight after it.
+        /// <c>lean data download</c> passes UTC midnights, for example 2026-10-20 00:00 UTC to 2026-10-21 00:00 UTC, which is
+        /// 2026-10-19 20:00 to 2026-10-20 20:00 ET. That request must return the bar of 2026-10-20, whose close is 16:00 ET.
+        /// </remarks>
+        private static bool IsDailyBarInRange(DateTime day, SecurityExchangeHours exchangeHours, DateTime startLocal, DateTime endLocal)
         {
-            queryParameters[RequestParameters.IntervalInMilliseconds] = GetIntervalsInMilliseconds(resolution);
-
-            var period = resolution.ToTimeSpan();
-            foreach (var prices in _restApiClient.ExecuteRequest<BaseResponse<PriceResponse>>(endpoint, queryParameters))
-            {
-                if (resolution == Resolution.Tick)
-                {
-                    foreach (var price in prices.Response)
-                    {
-                        if (price.Price != 0m)
-                        {
-                            yield return new Tick(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(price.DateTimeMilliseconds, symbolExchangeTimeZone), symbol, "", "", 0m, price.Price);
-                        }
-                    }
-                }
-                else
-                {
-                    foreach (var price in prices.Response)
-                    {
-                        if (price.Price != 0m)
-                        {
-                            yield return new TradeBar(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(price.DateTimeMilliseconds, symbolExchangeTimeZone), symbol, price.Price, price.Price, price.Price, price.Price, 0m, period);
-                        }
-                    }
-                }
-            }
-        }
-
-        public IEnumerable<BaseData>? GetTickHistoryData(string endpoint, Dictionary<string, string> queryParameters, Symbol symbol, Resolution resolution, TickType tickType, DateTime startDateTimeUtc, DateTime endDateTimeUtc, DateTimeZone symbolExchangeTimeZone)
-        {
-            switch (tickType)
-            {
-                case TickType.Trade:
-                    return GetHistoricalTickTradeDataByOneDayInterval(endpoint, queryParameters, symbol, startDateTimeUtc, endDateTimeUtc, symbolExchangeTimeZone);
-                case TickType.Quote:
-                    queryParameters[RequestParameters.IntervalInMilliseconds] = GetIntervalsInMilliseconds(resolution);
-
-                    Func<QuoteResponse, BaseData> quoteCallback =
-                        (quote) => new Tick(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(quote.DateTimeMilliseconds, symbolExchangeTimeZone), symbol, quote.AskCondition, quote.AskExchange.TryGetExchangeOrDefault(), quote.BidSize, quote.BidPrice, quote.AskSize, quote.AskPrice);
-
-                    return GetHistoricalQuoteData(endpoint, queryParameters, quoteCallback);
-                default:
-                    throw new ArgumentException($"Invalid tick type: {tickType}.");
-            }
-        }
-
-        public IEnumerable<BaseData>? GetIntradayHistoryData(string endpoint, Dictionary<string, string> queryParameters, Symbol symbol, Resolution resolution, TickType tickType, DateTimeZone symbolExchangeTimeZone)
-        {
-            queryParameters[RequestParameters.IntervalInMilliseconds] = GetIntervalsInMilliseconds(resolution);
-
-            var period = resolution.ToTimeSpan();
-
-            switch (tickType)
-            {
-                case TickType.Trade:
-                    return GetHistoricalOpenHighLowCloseData(endpoint, queryParameters, symbol, period, symbolExchangeTimeZone);
-                case TickType.Quote:
-                    Func<QuoteResponse, BaseData> quoteCallback =
-                        (quote) =>
-                        {
-                            var bar = new QuoteBar(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(quote.DateTimeMilliseconds, symbolExchangeTimeZone), symbol, null, decimal.Zero, null, decimal.Zero, period);
-                            bar.UpdateQuote(quote.BidPrice, quote.BidSize, quote.AskPrice, quote.AskSize);
-                            return bar;
-                        };
-
-                    return GetHistoricalQuoteData(endpoint, queryParameters, quoteCallback);
-                default:
-                    throw new ArgumentException($"Invalid tick type: {tickType}.");
-            }
-        }
-
-        public IEnumerable<BaseData>? GetDailyHistoryData(string endpoint, Dictionary<string, string> queryParameters, Symbol symbol, Resolution resolution, TickType tickType, DateTimeZone symbolExchangeTimeZone)
-        {
-            var period = resolution.ToTimeSpan();
-            switch (tickType)
-            {
-                case TickType.Trade:
-                    return GetHistoryEndOfDay(endpoint, queryParameters,
-                        // If OHLC prices zero, low trading activity, empty result, low volatility.
-                        (eof) => eof.Open == 0 || eof.High == 0 || eof.Low == 0 || eof.Close == 0,
-                        (tradeDateTime, eof) => new TradeBar(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(tradeDateTime.Date, symbolExchangeTimeZone), symbol, eof.Open, eof.High, eof.Low, eof.Close, eof.Volume, period));
-                case TickType.Quote:
-                    return GetHistoryEndOfDay(endpoint, queryParameters,
-                        // If Ask/Bid - prices/sizes zero, low quote activity, empty result, low volatility.
-                        (eof) => eof.AskPrice == 0 || eof.AskSize == 0 || eof.BidPrice == 0 || eof.BidSize == 0,
-                        (quoteDateTime, eof) =>
-                        {
-                            var bar = new QuoteBar(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(quoteDateTime.Date, symbolExchangeTimeZone), symbol, null, decimal.Zero, null, decimal.Zero, period);
-                            bar.UpdateQuote(eof.BidPrice, eof.BidSize, eof.AskPrice, eof.AskSize);
-                            return bar;
-                        });
-                default:
-                    throw new ArgumentException($"Invalid tick type: {tickType}.");
-            }
-        }
-
-        private IEnumerable<BaseData> GetHistoricalOpenInterestData(string endpoint, Dictionary<string, string> queryParameters, Symbol symbol, DateTimeZone symbolExchangeTimeZone)
-        {
-            foreach (var openInterests in _restApiClient.ExecuteRequest<BaseResponse<OpenInterestResponse>>(endpoint, queryParameters))
-            {
-                foreach (var openInterest in openInterests.Response)
-                {
-                    yield return new OpenInterest(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(openInterest.DateTimeMilliseconds, symbolExchangeTimeZone), symbol, openInterest.OpenInterest);
-                }
-            }
-        }
-
-        private IEnumerable<Tick> GetHistoricalTickTradeDataByOneDayInterval(string endpoint, Dictionary<string, string> queryParameters, Symbol symbol, DateTime startDateTimeUtc, DateTime endDateTimeUtc, DateTimeZone symbolExchangeTimeZone)
-        {
-            var startDateTimeET = startDateTimeUtc.ConvertFromUtc(TimeZoneThetaData);
-            var endDateTimeET = endDateTimeUtc.ConvertFromUtc(TimeZoneThetaData);
-            var modifiedParams = new Dictionary<string, string>(queryParameters);
-
-            foreach (var dateRange in ThetaDataExtensions.GenerateDateRangesWithInterval(startDateTimeET, endDateTimeET))
-            {
-                modifiedParams[RequestParameters.StartDate] = dateRange.startDate.ConvertToThetaDataDateFormat();
-                modifiedParams[RequestParameters.EndDate] = dateRange.endDate.ConvertToThetaDataDateFormat();
-
-                foreach (var trades in _restApiClient.ExecuteRequest<BaseResponse<TradeResponse>>(endpoint, modifiedParams))
-                {
-                    foreach (var trade in trades.Response)
-                    {
-                        yield return new Tick(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(trade.DateTimeMilliseconds, symbolExchangeTimeZone), symbol, trade.Condition.ToStringInvariant(), trade.Exchange.TryGetExchangeOrDefault(), trade.Size, trade.Price);
-                    }
-                }
-            }
-        }
-
-        private IEnumerable<TradeBar> GetHistoricalOpenHighLowCloseData(string endpoint, Dictionary<string, string> queryParameters, Symbol symbol, TimeSpan period, DateTimeZone symbolExchangeTimeZone)
-        {
-            foreach (var trades in _restApiClient.ExecuteRequest<BaseResponse<OpenHighLowCloseResponse>>(endpoint, queryParameters))
-            {
-                foreach (var trade in trades.Response)
-                {
-                    // If Open|High|Low|Close - prices zero, low trade activity, empty result, low volatility.
-                    if (trade.Open == 0 || trade.High == 0 || trade.Low == 0 || trade.Close == 0)
-                    {
-                        continue;
-                    }
-
-                    yield return new TradeBar(ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(trade.DateTimeMilliseconds, symbolExchangeTimeZone), symbol, trade.Open, trade.High, trade.Low, trade.Close, trade.Volume, period);
-                }
-            }
-        }
-
-        private IEnumerable<BaseData> GetHistoricalQuoteData(string endpoint, Dictionary<string, string> queryParameters, Func<QuoteResponse, BaseData> callback)
-        {
-            foreach (var quotes in _restApiClient.ExecuteRequest<BaseResponse<QuoteResponse>>(endpoint, queryParameters))
-            {
-                foreach (var quote in quotes.Response)
-                {
-                    // If Ask/Bid - prices/sizes zero, low quote activity, empty result, low volatility.
-                    if (quote.AskPrice == 0 || quote.AskSize == 0 || quote.BidPrice == 0 || quote.BidSize == 0)
-                    {
-                        continue;
-                    }
-
-                    yield return callback(quote);
-                }
-            }
-        }
-
-        private IEnumerable<BaseData>? GetHistoryEndOfDay(string endpoint, Dictionary<string, string> queryParameters, Func<EndOfDayReportResponse, bool> validateEmptyResponse, Func<DateTime, EndOfDayReportResponse, BaseData> res)
-        {
-            foreach (var endOfDays in _restApiClient.ExecuteRequest<BaseResponse<EndOfDayReportResponse>>(endpoint, queryParameters))
-            {
-                foreach (var endOfDay in endOfDays.Response)
-                {
-                    if (validateEmptyResponse(endOfDay))
-                    {
-                        continue;
-                    }
-                    yield return res(endOfDay.LastTradeDateTimeMilliseconds, endOfDay);
-                }
-            }
+            // An always-open market has no close, so its day ends at midnight.
+            var close = exchangeHours.IsMarketAlwaysOpen ? day.Date.AddDays(1) : exchangeHours.GetNextMarketClose(day.Date, false);
+            return close.Date <= day.Date.AddDays(1) && close > startLocal && close <= endLocal;
         }
 
         /// <summary>
-        /// Returns the interval in milliseconds corresponding to the specified resolution.
+        /// Gets the v3 query parameters that select a stock, an index, or an option contract.
         /// </summary>
-        /// <param name="resolution">The <see cref="Resolution"/> for which to retrieve the interval.</param>
-        /// <returns>
-        /// The interval in milliseconds as a string. 
-        /// For <see cref="Resolution.Tick"/>, returns "0".
-        /// For <see cref="Resolution.Second"/>, returns "1000".
-        /// For <see cref="Resolution.Minute"/>, returns "60000".
-        /// For <see cref="Resolution.Hour"/>, returns "3600000".
-        /// </returns>
-        /// <exception cref="NotSupportedException">Thrown when the specified resolution is not supported.</exception>
-        private string GetIntervalsInMilliseconds(Resolution resolution) => resolution switch
+        private Dictionary<string, string> GetSymbolQueryParameters(Symbol symbol)
         {
-            Resolution.Tick => "0",
-            Resolution.Second => "1000",
-            Resolution.Minute => "60000",
-            Resolution.Hour => "3600000",
-            _ => throw new NotSupportedException($"{nameof(ThetaDataProvider)}.{nameof(GetIntervalsInMilliseconds)}: The resolution type '{resolution}' is not supported.")
-        };
-
-        /// <summary>
-        /// Adds query parameters to the provided dictionary based on the given <see cref="Symbol"/>.
-        /// </summary>
-        /// <param name="queryParameters">The dictionary to which query parameters will be added.</param>
-        /// <param name="symbol">The <see cref="Symbol"/> containing the security type and ticker information.</param>
-        /// <returns>The updated dictionary with added query parameters.</returns>
-        /// <exception cref="NotImplementedException">
-        /// Thrown when the security type of the provided symbol is not implemented.
-        /// </exception>
-        private Dictionary<string, string> GetSymbolHistoryQueryParametersBySymbol(Dictionary<string, string> queryParameters, Symbol symbol)
-        {
-            var ticker = _symbolMapper.GetBrokerageSymbol(symbol);
-
             switch (symbol.SecurityType)
             {
                 case SecurityType.Index:
                 case SecurityType.Equity:
-                    queryParameters["root"] = ticker;
-                    break;
+                    return new Dictionary<string, string> { [RequestParameters.Symbol] = _symbolMapper.GetBrokerageSymbol(symbol) };
                 case SecurityType.Option:
                 case SecurityType.IndexOption:
-                    var tickerOption = ticker.Split(',');
-                    queryParameters["root"] = tickerOption[0];
-                    queryParameters["exp"] = tickerOption[1];
-                    queryParameters["strike"] = tickerOption[2];
-                    queryParameters["right"] = tickerOption[3];
-                    break;
+                    return _symbolMapper.GetOptionContractQueryParameters(symbol);
                 default:
-                    throw new NotImplementedException($"{nameof(ThetaDataProvider)}.{nameof(GetSymbolHistoryQueryParametersBySymbol)}: Security type '{symbol.SecurityType}' is not implemented.");
+                    throw new NotImplementedException($"{nameof(ThetaDataProvider)}.{nameof(GetSymbolQueryParameters)}: Security type '{symbol.SecurityType}' is not implemented.");
             }
-
-            return queryParameters;
         }
 
         /// <summary>
-        /// Retrieves the resource URL for historical tick data based on security type, tick type, and resolution.
+        /// Sets the time of day of an intraday request. The v3 default is 09:30 to 16:00 ET.
         /// </summary>
-        /// <param name="securityType">The type of security (e.g., Equity, Option, Index).</param>
-        /// <param name="tickType">The type of tick data (e.g., Trade, Quote, OpenInterest).</param>
-        /// <param name="resolution">The resolution of the data (e.g., Tick, Second, Minute, Hour, Daily).</param>
-        /// <returns>The resource URL for the requested historical tick data.</returns>
-        /// <exception cref="ArgumentException">Thrown when an invalid tick type is provided.</exception>
-        private string GetResourceUrlHistoryData(SecurityType securityType, TickType tickType, Resolution resolution)
-        {
-            return tickType switch
-            {
-                TickType.Trade => GetTradeResourceUrl(securityType, resolution),
-                TickType.Quote => GetQuoteResourceUrl(securityType, resolution),
-                TickType.OpenInterest when securityType == SecurityType.Option => "hist/option/open_interest",
-                _ => throw new ArgumentException($"{nameof(ThetaDataProvider)}.{nameof(GetResourceUrlHistoryData)}: Invalid tick type: {tickType}.")
-            };
-        }
-
-        /// <summary>
-        /// Retrieves the resource URL for trade tick data based on security type and resolution.
-        /// </summary>
-        /// <param name="securityType">The type of security (e.g., Equity, Option, Index).</param>
-        /// <param name="resolution">The resolution of the data (e.g., Tick, Second, Minute, Hour, Daily).</param>
-        /// <returns>The resource URL for trade tick data.</returns>
-        /// <exception cref="NotImplementedException">Thrown when the resolution is not implemented for trade tick data.</exception>
-        private string GetTradeResourceUrl(SecurityType securityType, Resolution resolution)
-        {
-            return resolution switch
-            {
-                Resolution.Tick => GetTradeTickResourceUrl(securityType),
-                Resolution.Second or Resolution.Minute or Resolution.Hour => GetTradeIntradayResourceUrl(securityType),
-                Resolution.Daily => GetTradeDailyResourceUrl(securityType),
-                _ => throw new NotImplementedException($"{nameof(ThetaDataProvider)}.{nameof(GetTradeResourceUrl)}: Resolution not implemented for trade: {resolution}.")
-            };
-        }
-
-        /// <summary>
-        /// Retrieves the resource URL for trade tick data at tick resolution based on security type.
-        /// </summary>
-        /// <param name="securityType">The type of security (e.g., Equity, Option, Index).</param>
-        /// <returns>The resource URL for trade tick data at tick resolution.</returns>
-        /// <exception cref="NotImplementedException">Thrown when the security type is not implemented for trade tick data at tick resolution.</exception>
-        private string GetTradeTickResourceUrl(SecurityType securityType)
-        {
-            return securityType switch
-            {
-                SecurityType.Index => "hist/index/price",
-                SecurityType.Equity => "hist/stock/trade",
-                SecurityType.IndexOption or SecurityType.Option => "hist/option/trade",
-                _ => throw new NotImplementedException($"{nameof(ThetaDataProvider)}.{nameof(GetTradeTickResourceUrl)}: Trade tick resource URL not implemented for security type: {securityType}.")
-            };
-        }
-
-        /// <summary>
-        /// Retrieves the resource URL for trade tick data at intraday resolutions based on security type.
-        /// </summary>
-        /// <param name="securityType">The type of security (e.g., Equity, Option, Index).</param>
-        /// <returns>The resource URL for trade tick data at intraday resolutions.</returns>
-        /// <exception cref="NotImplementedException">Thrown when the security type is not implemented for trade tick data at intraday resolutions.</exception>
-        private string GetTradeIntradayResourceUrl(SecurityType securityType)
-        {
-            return securityType switch
-            {
-                SecurityType.Index => "hist/index/price",
-                SecurityType.Equity => "hist/stock/ohlc",
-                SecurityType.IndexOption or SecurityType.Option => "hist/option/ohlc",
-                _ => throw new NotImplementedException($"{nameof(ThetaDataProvider)}.{nameof(GetTradeIntradayResourceUrl)}: Trade intraday resource URL not implemented for security type: {securityType}.")
-            };
-        }
-
-        /// <summary>
-        /// Retrieves the resource URL for trade tick data at daily resolution based on security type.
-        /// </summary>
-        /// <param name="securityType">The type of security (e.g., Equity, Option, Index).</param>
-        /// <returns>The resource URL for trade tick data at daily resolution.</returns>
-        /// <exception cref="NotImplementedException">Thrown when the security type is not implemented for trade tick data at daily resolution.</exception>
-        private string GetTradeDailyResourceUrl(SecurityType securityType)
-        {
-            return securityType switch
-            {
-                SecurityType.Index => "hist/index/eod",
-                SecurityType.Equity => "hist/stock/eod",
-                SecurityType.IndexOption or SecurityType.Option => "hist/option/eod",
-                _ => throw new NotImplementedException($"{nameof(ThetaDataProvider)}.{nameof(GetTradeDailyResourceUrl)}: Trade daily resource URL not implemented for security type: {securityType}.")
-            };
-        }
-
-        /// <summary>
-        /// Retrieves the resource URL for quote tick data based on security type and resolution.
-        /// </summary>
-        /// <param name="securityType">The type of security (e.g., Equity, Option, Index).</param>
-        /// <param name="resolution">The resolution of the data (e.g., Tick, Second, Minute, Hour, Daily).</param>
-        /// <returns>The resource URL for quote tick data.</returns>
-        /// <exception cref="NotImplementedException">Thrown when the resolution is not implemented for quote tick data.</exception>
-        private string GetQuoteResourceUrl(SecurityType securityType, Resolution resolution)
-        {
-            return resolution switch
-            {
-                Resolution.Tick => GetQuoteTickResourceUrl(securityType),
-                Resolution.Second or Resolution.Minute or Resolution.Hour => GetQuoteIntradayResourceUrl(securityType),
-                Resolution.Daily => GetQuoteDailyResourceUrl(securityType),
-                _ => throw new NotImplementedException($"{nameof(ThetaDataProvider)}.{nameof(GetQuoteResourceUrl)}: Resolution not implemented for quote: {resolution}.")
-            };
-        }
-
-        /// <summary>
-        /// Retrieves the resource URL for quote tick data at tick resolution based on security type.
-        /// </summary>
-        /// <param name="securityType">The type of security (e.g., Equity, Option).</param>
-        /// <returns>The resource URL for quote tick data at tick resolution.</returns>
-        /// <exception cref="NotImplementedException">Thrown when the security type is not implemented for quote tick data at tick resolution.</exception>
-        private string GetQuoteTickResourceUrl(SecurityType securityType)
-        {
-            return securityType switch
-            {
-                SecurityType.Equity => "hist/stock/quote",
-                SecurityType.IndexOption or SecurityType.Option => "hist/option/quote",
-                _ => throw new NotImplementedException($"{nameof(ThetaDataProvider)}.{nameof(GetQuoteTickResourceUrl)}: Quote tick resource URL not implemented for security type: {securityType}.")
-            };
-        }
-
-        /// <summary>
-        /// Retrieves the resource URL for quote tick data at intraday resolutions based on security type.
-        /// </summary>
-        /// <param name="securityType">The type of security (e.g., Equity, Option, Index).</param>
-        /// <returns>The resource URL for quote tick data at intraday resolutions.</returns>
-        /// <exception cref="NotImplementedException">Thrown when the security type is not implemented for quote tick data at intraday resolutions.</exception>
-        private string GetQuoteIntradayResourceUrl(SecurityType securityType)
-        {
-            return securityType switch
-            {
-                SecurityType.Index => "hist/index/price",
-                SecurityType.Equity => "hist/stock/quote",
-                SecurityType.IndexOption or SecurityType.Option => "hist/option/quote",
-                _ => throw new NotImplementedException($"{nameof(ThetaDataProvider)}.{nameof(GetQuoteIntradayResourceUrl)}: Quote intraday resource URL not implemented for security type: {securityType}.")
-            };
-        }
-
-        /// <summary>
-        /// Retrieves the resource URL for quote tick data at daily resolution based on security type.
-        /// </summary>
-        /// <param name="securityType">The type of security (e.g., Equity, Option).</param>
-        /// <returns>The resource URL for quote tick data at daily resolution.</returns>
-        /// <exception cref="NotImplementedException">Thrown when the security type is not implemented for quote tick data at daily resolution.</exception>
-        private string GetQuoteDailyResourceUrl(SecurityType securityType)
-        {
-            return securityType switch
-            {
-                SecurityType.Equity => "hist/stock/eod",
-                SecurityType.IndexOption or SecurityType.Option => "hist/option/eod",
-                _ => throw new NotImplementedException($"{nameof(ThetaDataProvider)}.{nameof(GetQuoteDailyResourceUrl)}: Quote daily resource URL not implemented for security type: {securityType}.")
-            };
-        }
-
-        /// <summary>
-        /// Converts the given <paramref name="thetaDataDateTime"/> from the ThetaData time zone to the specified symbol exchange time zone.
-        /// </summary>
-        /// <param name="thetaDataDateTime">The date and time in the ThetaData time zone returned by the API in a history request.</param>
-        /// <param name="symbolExchangeDateTimeZone">The destination time zone representing the symbol's exchange time zone.</param>
-        /// <returns>A <see cref="DateTime"/> value representing the given <paramref name="thetaDataDateTime"/> in the specified symbol exchange time zone.</returns>
         /// <remarks>
-        /// The ThetaData time zone is New York (EST) Time Zone with daylight savings time.
-        /// For more information, see <see href="https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/ke230k18g7fld-trading-hours"/>.
+        /// For options and indexes the first time is 09:00, so 1-hour bars start on the hour, as LEAN hour bars do.
+        /// No option trades before 09:30, so the 09:00 bar holds only regular-session data.
+        /// Index options trade until 16:15 ET, so options and indexes end at 16:15.
         /// </remarks>
-        private static DateTime ConvertThetaDataTimeZoneToSymbolExchangeTimeZone(DateTime thetaDataDateTime, DateTimeZone symbolExchangeDateTimeZone)
-            => thetaDataDateTime.ConvertTo(TimeZoneThetaData, symbolExchangeDateTimeZone);
+        private static void SetSessionTimes(Dictionary<string, string> queryParameters, SecurityType securityType, bool includeExtendedMarketHours)
+        {
+            if (securityType == SecurityType.Equity && includeExtendedMarketHours)
+            {
+                queryParameters[RequestParameters.StartTime] = "04:00:00";
+                queryParameters[RequestParameters.EndTime] = "20:00:00";
+            }
+            else if (securityType == SecurityType.Equity)
+            {
+                // 09:30, not 09:00: a 09:00 hour bar would hold pre-market trades.
+                queryParameters[RequestParameters.StartTime] = "09:30:00";
+                queryParameters[RequestParameters.EndTime] = "16:00:00";
+            }
+            else
+            {
+                queryParameters[RequestParameters.StartTime] = "09:00:00";
+                queryParameters[RequestParameters.EndTime] = "16:15:00";
+            }
+        }
+
+        private static List<BaseData> NotNull(IEnumerable<BaseData?> data) => data.Where(x => x != null).Select(x => x!).ToList();
     }
 }

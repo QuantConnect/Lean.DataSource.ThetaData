@@ -13,339 +13,368 @@
  * limitations under the License.
 */
 
+using System.Net;
+using System.Web;
 using Newtonsoft.Json;
 using QuantConnect.Util;
+using Newtonsoft.Json.Linq;
 using QuantConnect.Logging;
 using QuantConnect.Configuration;
-using System.Collections.Concurrent;
+using QuantConnect.Lean.DataSource.ThetaData.Converters;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
-using QuantConnect.Lean.DataSource.ThetaData.Models.Wrappers;
-using QuantConnect.Lean.DataSource.ThetaData.Models.Interfaces;
-using System.Web;
-using System.Collections.Specialized;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
 {
     /// <summary>
-    /// Represents a client for interacting with the Theta Data REST API by sending HTTP requests.
+    /// Sends requests to the ThetaData v3 REST API that Theta Terminal v3 serves.
     /// </summary>
+    /// <remarks>
+    /// The terminal answers every v2 request with HTTP 410 (checked on 2026-10-28), so this client speaks v3 only.
+    /// Docs: https://thetadata.net/docs/Articles/Getting-Started/v2-migration-guide.html
+    /// </remarks>
     public class ThetaDataRestApiClient : IDisposable
     {
         /// <summary>
-        /// The maximum number of times a failed request will be retried.
+        /// The default address of Theta Terminal v3 on the same machine.
         /// </summary>
-        private const int MaxRequestRetries = 2;
+        public const string DefaultRestApiUrl = "http://127.0.0.1:25503";
 
         /// <summary>
-        /// Represents the API version used in the REST API endpoints.
+        /// The port of the retired v2 terminal. A URL with this port is likely an old configuration.
         /// </summary>
-        /// <remarks>
-        /// This constant defines the version of the API to be used in requests. 
-        /// It is appended to the base URL to form the complete endpoint path.
-        /// </remarks>
-        private const string ApiVersion = "/v2";
+        private const int LegacyV2Port = 25510;
 
         /// <summary>
-        /// Represents the base URL for the REST API.
+        /// Days in 1 request for an interval below 1 minute. The v3 docs say:
+        /// "Intervals less than 1m are available only for single-day requests."
         /// </summary>
-        private readonly string _restApiBaseUrl = Config.Get("thetadata-rest-url", "http://127.0.0.1:25510");
+        private const int SubMinuteRequestDays = 1;
 
         /// <summary>
-        /// Represents a client for making HTTP API requests.
+        /// Days in 1 request for an interval of 1 minute or more. The v3 docs say:
+        /// "Multi-day requests are limited to 1 month of data." 28 days fits in every month.
         /// </summary>
+        private const int IntradayRequestDays = 28;
+
+        /// <summary>
+        /// Days in 1 request without an interval, such as end-of-day data. The terminal answered a longer range with
+        /// HTTP 400 "Too many days between start and end date; max 365 days allowed" (2026-10-28).
+        /// </summary>
+        private const int MaxRequestDays = 365;
+
+        private static readonly HashSet<string> SubMinuteIntervals = new() { "tick", "10ms", "100ms", "500ms", "1s", "5s", "10s", "15s", "30s" };
+
+        private static readonly JsonSerializer Serializer = JsonSerializer.Create(new JsonSerializerSettings
+        {
+            DateParseHandling = DateParseHandling.None,
+            FloatParseHandling = FloatParseHandling.Decimal,
+            Converters = { new ThetaDataDateTimeConverter() }
+        });
+
+        private static bool _legacyPortWarningFired;
+
         private readonly HttpClient _httpClient;
-
-        /// <summary>
-        /// Represents a RateGate instance used to control the rate of certain operations.
-        /// </summary>
         private readonly RateGate? _rateGate;
-
-        /// <summary>
-        /// Indicates whether this instance has been disposed.
-        /// </summary>
+        private readonly SemaphoreSlim _concurrencyLimiter;
+        private readonly int _maxConcurrentRequests;
+        private readonly int _maxRetries;
+        private readonly Func<int, TimeSpan> _retryDelay;
         private bool _disposed;
 
         /// <summary>
-        /// Initializes a new instance of the <see cref="ThetaDataRestApiClient"/>
+        /// The v3 base address, for example <c>http://127.0.0.1:25503/v3/</c>.
         /// </summary>
-        /// <param name="rateGate">Rate gate for controlling request rate.</param>
-        public ThetaDataRestApiClient(RateGate rateGate)
+        public Uri BaseAddress { get; }
+
+        /// <summary>
+        /// Creates a client for the address in the <c>thetadata-rest-url</c> config key.
+        /// </summary>
+        /// <param name="rateGate">Limits the request rate, or null for no limit.</param>
+        /// <param name="maxConcurrentRequests">The most requests in flight at once. ThetaData rejects more than the plan allows.</param>
+        public ThetaDataRestApiClient(RateGate? rateGate, int maxConcurrentRequests = 1)
+            : this(Config.Get("thetadata-rest-url", DefaultRestApiUrl), rateGate, maxConcurrentRequests)
         {
-            var baseAddress = $"{_restApiBaseUrl}{ApiVersion}/";
-            _httpClient = new HttpClient
-            {
-                BaseAddress = new Uri(baseAddress),
-                Timeout = TimeSpan.FromMinutes(5)
-            };
+        }
+
+        /// <summary>
+        /// Creates a client for the given address.
+        /// </summary>
+        /// <param name="restApiUrl">The terminal address, with or without a trailing <c>/v3</c>.</param>
+        /// <param name="rateGate">Limits the request rate, or null for no limit.</param>
+        /// <param name="maxConcurrentRequests">The most requests in flight at once.</param>
+        /// <param name="handler">The HTTP handler. Tests pass a fake one.</param>
+        /// <param name="retryDelay">The wait before retry number n (1-based). Tests pass zero.</param>
+        /// <param name="maxRetries">How many times a transient failure is retried.</param>
+        public ThetaDataRestApiClient(string restApiUrl, RateGate? rateGate, int maxConcurrentRequests,
+            HttpMessageHandler? handler = null, Func<int, TimeSpan>? retryDelay = null, int maxRetries = 3)
+        {
+            BaseAddress = GetApiBaseAddress(restApiUrl);
+            _httpClient = handler == null ? new HttpClient() : new HttpClient(handler);
+            _httpClient.BaseAddress = BaseAddress;
+            _httpClient.Timeout = TimeSpan.FromSeconds(Config.GetInt("thetadata-request-timeout-seconds", 300));
             _rateGate = rateGate;
+            _maxConcurrentRequests = Math.Max(1, maxConcurrentRequests);
+            _concurrencyLimiter = new SemaphoreSlim(_maxConcurrentRequests);
+            _maxRetries = Math.Max(0, maxRetries);
+            _retryDelay = retryDelay ?? DefaultRetryDelay;
         }
 
         /// <summary>
-        /// Executes a REST request in parallel and returns the results synchronously.
+        /// Converts the configured terminal address to the v3 base address and rejects a v2 address.
         /// </summary>
-        /// <typeparam name="T">The type of object that implements the <see cref="IBaseResponse"/> interface.</typeparam>
-        /// <param name="endpoint">The API endpoint.</param>
-        /// <param name="queryParameters">Query parameters for the request.</param>
-        /// <returns>A collection of objects that implement the <see cref="IBaseResponse"/> interface.</returns>
-        public IEnumerable<T?> ExecuteRequest<T>(string endpoint, Dictionary<string, string> queryParameters) where T : IBaseResponse
+        /// <exception cref="ArgumentException">The address is not an absolute HTTP address, or it names the v2 API.</exception>
+        public static Uri GetApiBaseAddress(string restApiUrl)
         {
-            var parameters = GetSpecificQueryParameters(queryParameters, RequestParameters.IntervalInMilliseconds, RequestParameters.StartDate, RequestParameters.EndDate);
-
-            if (parameters.Count != 3)
+            var url = string.IsNullOrWhiteSpace(restApiUrl) ? DefaultRestApiUrl : restApiUrl.Trim();
+            if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
             {
-                return ExecuteRequestAsync<T>(endpoint, queryParameters).SynchronouslyAwaitTaskResult();
+                throw new ArgumentException($"The 'thetadata-rest-url' value '{url}' is not an absolute http address. Example: {DefaultRestApiUrl}");
             }
 
-            var intervalInDay = parameters[RequestParameters.IntervalInMilliseconds] switch
+            var path = uri.AbsolutePath.Trim('/');
+            if (path.Equals("v2", StringComparison.OrdinalIgnoreCase) || path.EndsWith("/v2", StringComparison.OrdinalIgnoreCase))
             {
-                "0" => 1,
-                "1000" or "60000" => 30,
-                "3600000" => 90,
-                _ => throw new NotImplementedException($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequestParallelAsync)}: The interval '{parameters[RequestParameters.IntervalInMilliseconds]}' is not supported.")
-            };
-
-            var startDate = parameters[RequestParameters.StartDate].ConvertFromThetaDataDateFormat();
-            var endDate = parameters[RequestParameters.EndDate].ConvertFromThetaDataDateFormat();
-
-            if ((endDate - startDate).TotalDays <= intervalInDay)
+                throw new ArgumentException($"The 'thetadata-rest-url' value '{url}' names the ThetaData v2 API. ThetaData retired v2, and Theta Terminal v3 answers v2 requests with HTTP 410. " +
+                    $"Set 'thetadata-rest-url' to the terminal address without a version, for example {DefaultRestApiUrl}, or http://host.docker.internal:25503 inside a LEAN container.");
+            }
+            if (path.Equals("v3", StringComparison.OrdinalIgnoreCase) || path.EndsWith("/v3", StringComparison.OrdinalIgnoreCase))
             {
-                return ExecuteRequestAsync<T>(endpoint, queryParameters).SynchronouslyAwaitTaskResult();
+                path = path[..^2].TrimEnd('/');
             }
 
-            return ExecuteRequestParallelAsync<T>(endpoint, queryParameters, startDate, endDate, intervalInDay).SynchronouslyAwaitTaskResult();
+            if (uri.Port == LegacyV2Port && !_legacyPortWarningFired)
+            {
+                _legacyPortWarningFired = true;
+                Log.Error($"{nameof(ThetaDataRestApiClient)}: The 'thetadata-rest-url' value '{url}' uses port {LegacyV2Port}, the port of the retired v2 terminal. " +
+                    "Theta Terminal v3 listens on port 25503 by default. If requests fail to connect, set 'thetadata-rest-url' to the v3 port.");
+            }
+
+            var prefix = path.Length == 0 ? string.Empty : path + "/";
+            return new Uri($"{uri.Scheme}://{uri.Authority}/{prefix}v3/");
         }
 
         /// <summary>
-        /// Executes an HTTP GET request and deserializes the response content into an object.
+        /// Sends a request and returns its rows. A request with no data returns no rows.
         /// </summary>
-        /// <typeparam name="T">The type of objects that implement the base response interface.</typeparam>
-        /// <param name="endpoint">The API endpoint.</param>
-        /// <param name="queryParameters">Query parameters for the request.</param>
-        /// <returns>An enumerable collection of objects that implement the specified base response interface.</returns>
-        /// <exception cref="Exception">Thrown when an error occurs during the execution of the request or when the response is invalid.</exception>
-        private async IAsyncEnumerable<T?> ExecuteRequestWithPaginationAsync<T>(string endpoint, Dictionary<string, string> queryParameters)
-            where T : IBaseResponse
+        /// <remarks>
+        /// A request with both <c>start_date</c> and <c>end_date</c> and an <c>interval</c> is split into the date
+        /// ranges that v3 accepts. The rows come back in date order of the ranges.
+        /// </remarks>
+        /// <exception cref="ThetaDataRequestException">The request failed, or the plan does not include the data.</exception>
+        public IReadOnlyList<T> GetRows<T>(string endpoint, IReadOnlyDictionary<string, string> queryParameters) where T : ThetaDataRow
         {
-            var retryCount = 0;
-            var currentEndpoint = endpoint;
-            var currentQueryParams = HttpUtility.ParseQueryString(string.Empty);
+            return GetRowsAsync<T>(endpoint, queryParameters, CancellationToken.None).SynchronouslyAwaitTaskResult();
+        }
 
-            // Initialize current query parameters
-            foreach (var kvp in queryParameters)
+        /// <inheritdoc cref="GetRows{T}"/>
+        public async Task<IReadOnlyList<T>> GetRowsAsync<T>(string endpoint, IReadOnlyDictionary<string, string> queryParameters, CancellationToken cancellationToken)
+            where T : ThetaDataRow
+        {
+            var requests = SplitByDateRange(queryParameters).ToList();
+            if (requests.Count == 1)
             {
-                currentQueryParams[kvp.Key] = kvp.Value;
+                return await GetRowsOfOneRequestAsync<T>(endpoint, requests[0], cancellationToken).ConfigureAwait(false);
             }
 
-            while (currentEndpoint != null)
+            var results = new List<T>[requests.Count];
+            await Parallel.ForEachAsync(Enumerable.Range(0, requests.Count),
+                new ParallelOptions { MaxDegreeOfParallelism = _maxConcurrentRequests, CancellationToken = cancellationToken },
+                async (index, token) => results[index] = await GetRowsOfOneRequestAsync<T>(endpoint, requests[index], token).ConfigureAwait(false))
+                .ConfigureAwait(false);
+            return results.SelectMany(x => x).ToList();
+        }
+
+        /// <summary>
+        /// Splits a request into the date ranges that v3 accepts for its interval.
+        /// </summary>
+        public static IEnumerable<IReadOnlyDictionary<string, string>> SplitByDateRange(IReadOnlyDictionary<string, string> queryParameters)
+        {
+            if (!queryParameters.TryGetValue(RequestParameters.StartDate, out var start)
+                || !queryParameters.TryGetValue(RequestParameters.EndDate, out var end))
             {
-                var requestUri = BuildRequestUri(currentEndpoint, currentQueryParams);
-                Log.Debug($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: URI: {requestUri}");
+                yield return queryParameters;
+                yield break;
+            }
 
-                _rateGate?.WaitToProceed();
-
-                T? result = default;
-
-                using (StopwatchWrapper.StartIfEnabled($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: Executed request to {currentEndpoint}"))
+            var days = !queryParameters.TryGetValue(RequestParameters.Interval, out var interval) ? MaxRequestDays
+                : SubMinuteIntervals.Contains(interval) ? SubMinuteRequestDays
+                : IntradayRequestDays;
+            foreach (var (startDate, endDate) in ThetaDataExtensions.GenerateDateRangesWithInterval(start.ConvertFromThetaDataDateFormat(), end.ConvertFromThetaDataDateFormat(), days))
+            {
+                var parameters = new Dictionary<string, string>(queryParameters)
                 {
-                    try
+                    [RequestParameters.StartDate] = startDate.ConvertToThetaDataDateFormat(),
+                    [RequestParameters.EndDate] = endDate.ConvertToThetaDataDateFormat()
+                };
+                yield return parameters;
+            }
+        }
+
+        /// <summary>
+        /// Parses a v3 JSON response. Stock and index rows are flat. Option rows come as
+        /// <c>{"contract": {...}, "data": [...]}</c>, one entry per contract.
+        /// </summary>
+        /// <exception cref="ThetaDataRequestException">The body is not a v3 JSON response.</exception>
+        public static List<T> ParseRows<T>(string json) where T : ThetaDataRow
+        {
+            JToken root;
+            try
+            {
+                using var reader = new JsonTextReader(new StringReader(json))
+                {
+                    DateParseHandling = DateParseHandling.None,
+                    FloatParseHandling = FloatParseHandling.Decimal
+                };
+                root = JToken.ReadFrom(reader);
+            }
+            catch (JsonReaderException e)
+            {
+                throw new ThetaDataRequestException($"{nameof(ThetaDataRestApiClient)}: The response is not JSON. It starts with: '{Truncate(json)}'", innerException: e);
+            }
+
+            var items = root as JArray ?? (root as JObject)?["response"] as JArray
+                ?? throw new ThetaDataRequestException($"{nameof(ThetaDataRestApiClient)}: The response has no 'response' array. It starts with: '{Truncate(json)}'");
+
+            var rows = new List<T>(items.Count);
+            try
+            {
+                foreach (var item in items)
+                {
+                    if (item is JObject entry && entry["data"] is JArray data && entry["contract"] is JObject contractToken)
                     {
-                        var response = await _httpClient.GetAsync(requestUri).ConfigureAwait(false);
-
-                        // docs: https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/3ucp87xxgy8d3-error-codes
-                        if ((int)response.StatusCode == 472)
+                        var contract = contractToken.ToObject<ThetaDataContract>(Serializer)!;
+                        foreach (var dataItem in data)
                         {
-                            Log.Debug($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: No data found for the specified request (Status Code: 472) by {requestUri}");
-                            // No more data, exit the iterator
-                            yield break;
+                            var row = dataItem.ToObject<T>(Serializer)!;
+                            row.Contract = contract;
+                            rows.Add(row);
                         }
-
-                        if (!response.IsSuccessStatusCode)
-                        {
-                            if (retryCount < MaxRequestRetries)
-                            {
-                                retryCount++;
-                                await Task.Delay(1000 * retryCount).ConfigureAwait(false);
-                                // Retry the same request
-                                continue;
-                            }
-
-                            throw new Exception($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: Request failed with status code {response.StatusCode} for {currentEndpoint}. Reason: {response.ReasonPhrase}");
-                        }
-
-                        var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                        result = JsonConvert.DeserializeObject<T>(content);
-
-                        if (result?.Header.NextPage != null)
-                        {
-                            var nextPageUri = new Uri(result.Header.NextPage);
-                            currentEndpoint = nextPageUri.AbsolutePath.Replace(ApiVersion, string.Empty);
-                            currentQueryParams = HttpUtility.ParseQueryString(nextPageUri.Query);
-                        }
-                        else
-                        {
-                            // No more pages
-                            currentEndpoint = null;
-                        }
-
-                        // Reset retry count on success
-                        retryCount = 0;
                     }
-                    catch (HttpRequestException ex)
+                    else
                     {
-                        if (retryCount < MaxRequestRetries)
-                        {
-                            retryCount++;
-                            await Task.Delay(1000 * retryCount).ConfigureAwait(false);
-                            // Retry the same request
-                            continue;
-                        }
-
-                        throw new Exception($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: HTTP request failed for {currentEndpoint}. Error: {ex.Message}", ex);
-                    }
-                    catch (TaskCanceledException ex)
-                    {
-                        throw new Exception($"{nameof(ThetaDataRestApiClient)}.{nameof(ExecuteRequest)}: Request timeout for {currentEndpoint}. Error: {ex.Message}", ex);
+                        rows.Add(item.ToObject<T>(Serializer)!);
                     }
                 }
+            }
+            catch (Exception e) when (e is JsonException or ArgumentException or FormatException or OverflowException)
+            {
+                throw new ThetaDataRequestException($"{nameof(ThetaDataRestApiClient)}: A row of the response does not match {typeof(T).Name}: {e.Message} The response starts with: '{Truncate(json)}'", innerException: e);
+            }
+            return rows;
+        }
 
-                if (result != null)
+        private async Task<List<T>> GetRowsOfOneRequestAsync<T>(string endpoint, IReadOnlyDictionary<string, string> queryParameters, CancellationToken cancellationToken)
+            where T : ThetaDataRow
+        {
+            var content = await SendAsync(BuildRequestUri(endpoint, queryParameters), cancellationToken).ConfigureAwait(false);
+            return content == null ? new List<T>() : ParseRows<T>(content);
+        }
+
+        /// <summary>
+        /// Builds the relative request address. It always asks for JSON.
+        /// </summary>
+        public static Uri BuildRequestUri(string endpoint, IReadOnlyDictionary<string, string> queryParameters)
+        {
+            var query = HttpUtility.ParseQueryString(string.Empty);
+            foreach (var (key, value) in queryParameters)
+            {
+                query[key] = value;
+            }
+            query[RequestParameters.Format] = "json";
+            return new Uri($"{endpoint.TrimStart('/')}?{query}", UriKind.Relative);
+        }
+
+        /// <summary>
+        /// Sends 1 GET request. Returns the body, or null when ThetaData has no data (HTTP 472).
+        /// </summary>
+        private async Task<string?> SendAsync(Uri requestUri, CancellationToken cancellationToken)
+        {
+            for (var attempt = 0; ; attempt++)
+            {
+                int? statusCode = null;
+                string failure;
+                Exception? innerException = null;
+
+                await _concurrencyLimiter.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
                 {
-                    yield return result;
-                }
-            }
-        }
+                    _rateGate?.WaitToProceed();
+                    Log.Debug($"{nameof(ThetaDataRestApiClient)}.{nameof(SendAsync)}: GET {requestUri}");
+                    using var response = await _httpClient.GetAsync(requestUri, cancellationToken).ConfigureAwait(false);
+                    var body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                    statusCode = (int)response.StatusCode;
 
-        /// <summary>
-        /// Executes a REST request asynchronously and retrieves a paginated response.
-        /// </summary>
-        /// <typeparam name="T">The type of response that implements <see cref="IBaseResponse"/>.</typeparam>
-        /// <param name="endpoint">The API endpoint.</param>
-        /// <param name="queryParameters">Query parameters for the request.</param>
-        /// <returns>
-        /// A task that represents the asynchronous operation, returning an <see cref="IEnumerable{T}"/> 
-        /// containing the responses received from paginated requests.
-        /// </returns>
-        private async Task<IEnumerable<T?>> ExecuteRequestAsync<T>(string endpoint, Dictionary<string, string> queryParameters) where T : IBaseResponse
-        {
-            var responses = new List<T?>();
-            await foreach (var response in ExecuteRequestWithPaginationAsync<T>(endpoint, queryParameters))
-            {
-                responses.Add(response);
-            }
-            return responses;
-        }
-
-        /// <summary>
-        /// Executes a REST request in parallel over multiple date ranges, ensuring efficient batch processing.
-        /// A maximum of 4 parallel requests are made at a time to avoid excessive API load.
-        /// </summary>
-        /// <typeparam name="T">The type of response that implements <see cref="IBaseResponse"/>.</typeparam>
-        /// <param name="endpoint">The API endpoint.</param>
-        /// <param name="queryParameters">Query parameters for the request.</param>
-        /// <param name="startDate">The start date of the data range.</param>
-        /// <param name="endDate">The end date of the data range.</param>
-        /// <param name="intervalInDay">
-        /// The interval in days for splitting the date range into smaller requests.
-        /// </param>
-        /// <returns>
-        /// A task representing the asynchronous operation, returning an <see cref="IEnumerable{T}"/> 
-        /// containing the aggregated responses from all parallel requests.
-        /// </returns>
-        private async Task<IEnumerable<T?>> ExecuteRequestParallelAsync<T>(string endpoint, Dictionary<string, string> queryParameters, DateTime startDate, DateTime endDate, int intervalInDay) where T : IBaseResponse
-        {
-            var resultDict = new ConcurrentDictionary<int, List<T?>>();
-
-            var dateRanges = ThetaDataExtensions.GenerateDateRangesWithInterval(startDate, endDate, intervalInDay).Select((range, index) => (range, index)).ToList();
-
-            await Parallel.ForEachAsync(dateRanges, async (item, _) =>
-            {
-                var (dateRange, index) = item;
-                var modifiedParams = new Dictionary<string, string>(queryParameters);
-                modifiedParams[RequestParameters.StartDate] = dateRange.startDate.ConvertToThetaDataDateFormat();
-                modifiedParams[RequestParameters.EndDate] = dateRange.endDate.ConvertToThetaDataDateFormat();
-
-                var results = new List<T?>();
-                await foreach (var response in ExecuteRequestWithPaginationAsync<T>(endpoint, modifiedParams))
-                {
-                    results.Add(response);
-                }
-                resultDict[index] = results;
-            }).ConfigureAwait(false);
-
-            return resultDict.OrderBy(kvp => kvp.Key).SelectMany(kvp => kvp.Value);
-        }
-
-        /// <summary>
-        /// Builds a complete request URI with query parameters
-        /// </summary>
-        /// <param name="endpoint">The API endpoint.</param>
-        /// <param name="queryParameters">Query parameters to append.</param>
-        /// <returns>The complete URI.</returns>
-        private Uri BuildRequestUri(string endpoint, NameValueCollection queryParameters)
-        {
-            // Trim leading slashes only if the string starts with /
-            if (endpoint.StartsWith('/'))
-            {
-                endpoint = endpoint.TrimStart('/');
-            }
-
-            if (queryParameters != null && queryParameters.Count > 0)
-            {
-                return new Uri($"{endpoint}?{queryParameters}", UriKind.Relative);
-            }
-
-            return new Uri(endpoint, UriKind.Relative);
-        }
-
-        /// <summary>
-        /// Extracts specific query parameters from a collection of request parameters.
-        /// </summary>
-        /// <param name="queryParameters">The dictionary of query parameters.</param>
-        /// <param name="findingParamNames">The parameter names to find.</param>
-        /// <returns>A dictionary of the matching query parameters and their values.</returns>
-        /// <exception cref="ArgumentException">Thrown when a required parameter is missing or has an invalid value.</exception>
-        private Dictionary<string, string> GetSpecificQueryParameters(Dictionary<string, string> queryParameters, params string[] findingParamNames)
-        {
-            var parameters = new Dictionary<string, string>(findingParamNames.Length);
-
-            foreach (var paramName in findingParamNames)
-            {
-                if (queryParameters.TryGetValue(paramName, out var value))
-                {
-                    if (string.IsNullOrEmpty(value))
+                    switch (statusCode)
                     {
-                        throw new ArgumentException($"The value for the parameter '{paramName}' is null or empty. Ensure that this parameter has a valid value.", nameof(queryParameters));
+                        case 200:
+                            return body;
+                        // docs: https://thetadata.net/docs/Articles/Errors-Exchanges-Conditions/Error-Codes.html
+                        case 472:
+                            Log.Debug($"{nameof(ThetaDataRestApiClient)}.{nameof(SendAsync)}: No data for {requestUri}");
+                            return null;
+                        case 403:
+                        case 471:
+                            throw new ThetaDataRequestException($"ThetaData denied {requestUri} (HTTP {statusCode}): {Truncate(body)}. Your ThetaData plan does not include this data.", statusCode);
+                        case 410:
+                            throw new ThetaDataRequestException($"Theta Terminal at {BaseAddress} rejected {requestUri} as retired (HTTP 410): {Truncate(body)}", statusCode);
+                        case 570:
+                            throw new ThetaDataRequestException($"ThetaData rejected {requestUri} as too large (HTTP 570). Request a shorter date range.", statusCode);
+                        case 429:
+                        case 474:
+                        case 571:
+                        case >= 500:
+                            failure = $"HTTP {statusCode}: {Truncate(body)}";
+                            break;
+                        default:
+                            throw new ThetaDataRequestException($"ThetaData rejected {requestUri} (HTTP {statusCode}): {Truncate(body)}", statusCode);
                     }
-                    parameters[paramName] = value;
                 }
-            }
+                catch (HttpRequestException e)
+                {
+                    failure = $"cannot connect to Theta Terminal at {BaseAddress}: {e.Message}. Check that Theta Terminal v3 runs. " +
+                        "Inside a LEAN container, set 'thetadata-rest-url' to http://host.docker.internal:25503";
+                    innerException = e;
+                }
+                catch (TaskCanceledException e) when (!cancellationToken.IsCancellationRequested)
+                {
+                    failure = $"timeout after {_httpClient.Timeout.TotalSeconds} seconds";
+                    innerException = e;
+                }
+                finally
+                {
+                    _concurrencyLimiter.Release();
+                }
 
-            return parameters;
+                if (attempt >= _maxRetries)
+                {
+                    throw new ThetaDataRequestException($"ThetaData request {requestUri} failed after {attempt + 1} attempts: {failure}", statusCode, innerException);
+                }
+                Log.Trace($"{nameof(ThetaDataRestApiClient)}.{nameof(SendAsync)}: Retry {attempt + 1} of {_maxRetries} for {requestUri}: {failure}");
+                await Task.Delay(_retryDelay(attempt + 1), cancellationToken).ConfigureAwait(false);
+            }
         }
 
         /// <summary>
-        /// Disposes the HTTP client resources.
+        /// Exponential backoff with jitter: about 1 s, 2 s, 4 s, plus up to 250 ms.
+        /// </summary>
+        private static TimeSpan DefaultRetryDelay(int retry)
+            => TimeSpan.FromMilliseconds(1000 * Math.Pow(2, retry - 1) + Random.Shared.Next(0, 250));
+
+        private static string Truncate(string text) => text.Length <= 300 ? text : text[..300];
+
+        /// <summary>
+        /// Disposes the HTTP client.
         /// </summary>
         public void Dispose()
         {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        /// <summary>
-        /// Disposes the HTTP client resources.
-        /// </summary>
-        /// <param name="disposing">True if disposing managed resources.</param>
-        protected virtual void Dispose(bool disposing)
-        {
-            if (!_disposed)
+            if (_disposed)
             {
-                if (disposing)
-                {
-                    _httpClient?.Dispose();
-                }
-                _disposed = true;
+                return;
             }
+            _disposed = true;
+            _httpClient.Dispose();
+            _concurrencyLimiter.Dispose();
+            GC.SuppressFinalize(this);
         }
     }
 }

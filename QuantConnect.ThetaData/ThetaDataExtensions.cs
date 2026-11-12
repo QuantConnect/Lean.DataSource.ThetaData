@@ -44,9 +44,9 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// Generates date ranges with each range covering a specified number of days from the specified <paramref name="startDate"/> to <paramref name="endDate"/>.
         /// </summary>
         /// <param name="startDate">The starting date (inclusive) of the date range.</param>
-        /// <param name="endDate">The ending date (exclusive) of the date range.</param>
-        /// <param name="intervalDays">The number of days each date range should cover.</param>
-        /// <returns>An enumerable sequence of tuples where each tuple contains a start date (inclusive) and end date (exclusive) covering the specified number of days.</returns>
+        /// <param name="endDate">The ending date (inclusive) of the date range.</param>
+        /// <param name="intervalDays">The number of days each date range covers, at least 1.</param>
+        /// <returns>Ranges of exactly <paramref name="intervalDays"/> days, both ends inclusive. The last range ends at <paramref name="endDate"/>.</returns>
         /// <remarks>
         /// <see href="https://http-docs.thetadata.us/Articles/Performance-And-Tuning/Request-Sizing"/>
         /// <para>
@@ -58,11 +58,16 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// </remarks>
         public static IEnumerable<(DateTime startDate, DateTime endDate)> GenerateDateRangesWithInterval(DateTime startDate, DateTime endDate, int intervalDays = 1)
         {
+            if (intervalDays < 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(intervalDays), "The interval must be at least 1 day.");
+            }
+
             DateTime currentDate = startDate;
 
             while (currentDate <= endDate)
             {
-                DateTime nextDate = currentDate.AddDays(intervalDays);
+                DateTime nextDate = currentDate.AddDays(intervalDays - 1);
 
                 if (nextDate > endDate)
                     nextDate = endDate;
@@ -99,9 +104,12 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <remarks>
         /// Logs an error if the exchange number is not found in the dictionary.
         /// </remarks>
-        public static string TryGetExchangeOrDefault(this byte exchangeNumber)
+        public static string TryGetExchangeOrDefault(this byte exchangeNumber) => TryGetExchangeOrDefault((int)exchangeNumber);
+
+        /// <inheritdoc cref="TryGetExchangeOrDefault(byte)"/>
+        public static string TryGetExchangeOrDefault(this int exchangeNumber)
         {
-            if (Exchanges.TryGetValue(exchangeNumber, out var exchange))
+            if (exchangeNumber is >= byte.MinValue and <= byte.MaxValue && Exchanges.TryGetValue((byte)exchangeNumber, out var exchange))
             {
                 return exchange;
             }

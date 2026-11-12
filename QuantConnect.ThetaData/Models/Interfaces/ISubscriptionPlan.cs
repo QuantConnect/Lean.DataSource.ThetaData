@@ -52,4 +52,10 @@ public interface ISubscriptionPlan
     /// Represents a rate limiting mechanism that controls the rate of access to a resource.
     /// </summary>
     public RateGate? RateGate { get; }
+
+    /// <summary>
+    /// The most requests in flight at once. ThetaData answers HTTP 429 to more.
+    /// Source: https://thetadata.net/docs/Articles/Data-And-Requests/Concurrent-Requests.html (FREE 1, VALUE 2, STANDARD 4, PRO 8).
+    /// </summary>
+    public int MaxConcurrentRequests { get; }
 }

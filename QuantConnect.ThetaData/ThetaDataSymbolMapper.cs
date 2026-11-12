@@ -13,14 +13,22 @@
  * limitations under the License.
 */
 
+using System.Globalization;
 using QuantConnect.Brokerages;
+using System.Collections.Concurrent;
+using QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Enums;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
 {
     /// <summary>
-    /// Index Option Tickers: https://http-docs.thetadata.us/docs/theta-data-rest-api-v2/s1ezbyfni6rw0-index-option-tickers
+    /// Maps LEAN symbols to ThetaData contracts and back.
     /// </summary>
+    /// <remarks>
+    /// 2 formats exist. The v3 REST API takes strikes in dollars and rights "call"/"put".
+    /// The streaming API (v1 events) still takes strikes in tenths of a cent and rights "C"/"P".
+    /// <see cref="GetBrokerageSymbol"/> returns the streaming format.
+    /// </remarks>
     public class ThetaDataSymbolMapper : ISymbolMapper
     {
         /// <summary> 
@@ -31,12 +39,12 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <summary>
         /// Cache mapping data provider ticker strings to symbols.
         /// </summary>
-        private Dictionary<string, Symbol> _dataProviderSymbolCache = new();
+        private readonly ConcurrentDictionary<string, Symbol> _dataProviderSymbolCache = new();
 
         /// <summary>
         /// Cache mapping symbols to their corresponding data provider ticker strings.
         /// </summary>
-        private Dictionary<Symbol, string> _leanSymbolCache = new();
+        private readonly ConcurrentDictionary<Symbol, string> _leanSymbolCache = new();
 
         /// <summary>
         /// Represents a set of supported security types.
@@ -47,7 +55,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         public readonly HashSet<SecurityType> SupportedSecurityType = new() { SecurityType.Equity, SecurityType.Index, SecurityType.Option, SecurityType.IndexOption };
 
         /// <summary>
-        /// Converts a Lean symbol instance to a brokerage symbol.
+        /// Converts a Lean symbol instance to the streaming (v1 events) contract format.
         /// </summary>
         /// <param name="symbol">The Lean symbol instance to be converted.</param>
         /// <returns>
@@ -92,8 +100,8 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <param name="root">The root symbol for the Lean symbol.</param>
         /// <param name="contractSecurityType">The type of contract security (e.g., Option, Equity).</param>
         /// <param name="dataProviderDate">The date string formatted according to the data provider's requirements.</param>
-        /// <param name="strike">The strike price for options contracts.</param>
-        /// <param name="right">The option right for options contracts (Call or Put).</param>
+        /// <param name="strike">The strike price in tenths of a cent, as the streaming API sends it.</param>
+        /// <param name="right">The option right for options contracts ("C" or "P").</param>
         /// <returns>
         /// A Lean symbol constructed using the provided parameters.
         /// </returns>
@@ -105,7 +113,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
                 switch (contractSecurityType)
                 {
                     case ContractSecurityType.Option:
-                        return GetLeanSymbol(root, SecurityType.Option, MARKET, dataProviderDate.ConvertFromThetaDataDateFormat(), strike, ConvertContractOptionRightFromThetaDataFormat(right));
+                        return GetLeanSymbol(root, SecurityType.Option, MARKET, dataProviderDate.ConvertFromThetaDataDateFormat(), ConvertStrikePriceFromThetaDataFormat(strike), ConvertContractOptionRightFromThetaDataFormat(right));
                     case ContractSecurityType.Equity:
                         return GetLeanSymbol(root, SecurityType.Equity, MARKET);
                     case ContractSecurityType.Index:
@@ -142,7 +150,7 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         /// <param name="market">The market/exchange where the security is traded.</param>
         /// <param name="optionStyle">The option style for options contracts (e.g., American, European).</param>
         /// <param name="expirationDate">The expiration date for options contracts. Default is DateTime.MinValue.</param>
-        /// <param name="strike">The strike price for options contracts. Default is 0.</param>
+        /// <param name="strike">The strike price in dollars. Default is 0.</param>
         /// <param name="optionRight">The option right for options contracts (Call or Put). Default is Call.</param>
         /// <param name="underlying">The underlying symbol for options contracts. Default is null.</param>
         /// <returns>
@@ -159,11 +167,6 @@ namespace QuantConnect.Lean.DataSource.ThetaData
 
             var underlyingSymbolStr = underlying?.Value ?? dataProviderTicker;
             var leanSymbol = default(Symbol);
-
-            if (strike != 0m)
-            {
-                strike = ConvertStrikePriceFromThetaDataFormat(strike);
-            }
 
             switch (securityType)
             {
@@ -189,6 +192,51 @@ namespace QuantConnect.Lean.DataSource.ThetaData
             }
 
             return leanSymbol;
+        }
+
+        /// <summary>
+        /// Gets the v3 REST query parameters that select 1 option contract.
+        /// </summary>
+        /// <param name="symbol">An option or index option contract.</param>
+        /// <returns>The symbol (root), expiration, strike in dollars, and right.</returns>
+        /// <example>SPY 2024-01-19 470 call: symbol=SPY, expiration=20240119, strike=470.000, right=call.</example>
+        public Dictionary<string, string> GetOptionContractQueryParameters(Symbol symbol)
+        {
+            if (!symbol.SecurityType.IsOption() || symbol.IsCanonical())
+            {
+                throw new ArgumentException($"{nameof(ThetaDataSymbolMapper)}.{nameof(GetOptionContractQueryParameters)}: '{symbol}' is not an option contract.");
+            }
+
+            return new Dictionary<string, string>
+            {
+                [RequestParameters.Symbol] = symbol.ID.Symbol,
+                [RequestParameters.Expiration] = symbol.ID.Date.ConvertToThetaDataDateFormat(),
+                [RequestParameters.Strike] = symbol.ID.StrikePrice.ToString("0.000", CultureInfo.InvariantCulture),
+                [RequestParameters.Right] = symbol.ID.OptionRight == OptionRight.Call ? "call" : "put"
+            };
+        }
+
+        /// <summary>
+        /// Creates the LEAN symbol of a contract from a v3 REST response.
+        /// </summary>
+        /// <param name="contract">The contract, with the strike in dollars and the right "CALL" or "PUT".</param>
+        /// <param name="canonicalOrUnderlying">The canonical option symbol, or its underlying.</param>
+        /// <remarks>
+        /// The symbol matches the one LEAN's option universe file reader creates for the same row.
+        /// For an index option the target option is the contract root, for example "SPXW".
+        /// </remarks>
+        public Symbol GetLeanOptionSymbol(ThetaDataContract contract, Symbol canonicalOrUnderlying)
+        {
+            var underlying = canonicalOrUnderlying.SecurityType.IsOption() ? canonicalOrUnderlying.Underlying : canonicalOrUnderlying;
+            var optionSecurityType = underlying.SecurityType == SecurityType.Index ? SecurityType.IndexOption : SecurityType.Option;
+            var right = contract.Right.ToUpperInvariant() switch
+            {
+                "CALL" or "C" => OptionRight.Call,
+                "PUT" or "P" => OptionRight.Put,
+                _ => throw new ArgumentException($"{nameof(ThetaDataSymbolMapper)}.{nameof(GetLeanOptionSymbol)}: Unknown option right '{contract.Right}'.")
+            };
+            var targetOption = optionSecurityType == SecurityType.IndexOption ? contract.Symbol : null;
+            return Symbol.CreateOption(underlying, targetOption, underlying.ID.Market, optionSecurityType.DefaultOptionStyle(), right, contract.Strike, contract.Expiration);
         }
 
         /// <summary>

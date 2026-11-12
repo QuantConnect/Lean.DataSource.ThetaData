@@ -16,30 +16,22 @@
 using QuantConnect.Logging;
 using QuantConnect.Interfaces;
 using QuantConnect.Lean.DataSource.ThetaData.Models.Rest;
-using QuantConnect.Lean.DataSource.ThetaData.Models.Common;
 
 namespace QuantConnect.Lean.DataSource.ThetaData
 {
     /// <summary>
     /// ThetaData.net implementation of <see cref="IOptionChainProvider"/>
     /// </summary>
+    /// <remarks>
+    /// It lists the contracts that quoted on the date (<c>/v3/option/list/contracts/quote</c>, Value plan or higher).
+    /// When the plan denies that request, it lists the contracts in the end-of-day report of the date instead,
+    /// which the Free plan allows. The report exists after about 17:15 ET, so on the Free plan the chain of today is empty until then.
+    /// </remarks>
     public class ThetaDataOptionChainProvider : IOptionChainProvider
     {
-        /// <summary>
-        /// Provides the TheData mapping between Lean symbols and brokerage specific symbols.
-        /// </summary>
         private readonly ThetaDataSymbolMapper _symbolMapper;
-
-        /// <summary>
-        /// Provider The TheData Rest Api client instance.
-        /// </summary>
         private readonly ThetaDataRestApiClient _restApiClient;
-
-        /// <summary>
-        /// Collection of pre-defined option rights.
-        /// Initialized for performance optimization as the API only returns strike price without indicating the right.
-        /// </summary>
-        private readonly IEnumerable<OptionRight> optionRights = new[] { OptionRight.Call, OptionRight.Put };
+        private readonly ThetaDataOptionEndOfDayLoader _endOfDayLoader;
 
         /// <summary>
         /// Indicates whether the warning for invalid <see cref="SecurityType"/> has been fired.
@@ -47,47 +39,68 @@ namespace QuantConnect.Lean.DataSource.ThetaData
         private volatile bool _unsupportedSecurityTypeWarningFired;
 
         /// <summary>
+        /// True after the plan denied the contract list request. Later calls go to the end-of-day report directly.
+        /// </summary>
+        private volatile bool _useEndOfDayReport;
+
+        /// <summary>
         /// Initializes a new instance of the <see cref="ThetaDataOptionChainProvider"/>
         /// </summary>
         /// <param name="symbolMapper">The TheData mapping between Lean symbols and brokerage specific symbols.</param>
         /// <param name="restApiClient">The client for interacting with the Theta Data REST API by sending HTTP requests</param>
-        public ThetaDataOptionChainProvider(ThetaDataSymbolMapper symbolMapper, ThetaDataRestApiClient restApiClient)
+        /// <param name="endOfDayLoader">Loads the end-of-day report of a chain. Null creates one on <paramref name="restApiClient"/>.</param>
+        public ThetaDataOptionChainProvider(ThetaDataSymbolMapper symbolMapper, ThetaDataRestApiClient restApiClient, ThetaDataOptionEndOfDayLoader? endOfDayLoader = null)
         {
             _symbolMapper = symbolMapper;
             _restApiClient = restApiClient;
+            _endOfDayLoader = endOfDayLoader ?? new ThetaDataOptionEndOfDayLoader(restApiClient);
         }
 
         /// <inheritdoc />
+        /// <param name="symbol">The underlying (SPY, SPX) or a canonical option (?SPY, ?SPXW). For an index, the canonical option selects the root, for example SPXW instead of SPX.</param>
+        /// <param name="date">The trading day.</param>
         public IEnumerable<Symbol> GetOptionContractList(Symbol symbol, DateTime date)
         {
-            if ((symbol.SecurityType.IsOption() && symbol.SecurityType == SecurityType.FutureOption) ||
-                (symbol.HasUnderlying && symbol.Underlying.SecurityType != SecurityType.Equity && symbol.Underlying.SecurityType != SecurityType.Index))
+            if (symbol.SecurityType == SecurityType.FutureOption ||
+                (symbol.SecurityType.IsOption() && !symbol.HasUnderlying) ||
+                (symbol.HasUnderlying && symbol.Underlying.SecurityType != SecurityType.Equity && symbol.Underlying.SecurityType != SecurityType.Index) ||
+                (!symbol.SecurityType.IsOption() && symbol.SecurityType != SecurityType.Equity && symbol.SecurityType != SecurityType.Index))
             {
                 if (!_unsupportedSecurityTypeWarningFired)
                 {
                     _unsupportedSecurityTypeWarningFired = true;
                     Log.Trace($"{nameof(ThetaDataOptionChainProvider)}.{nameof(GetOptionContractList)}: Unsupported security type {symbol.SecurityType}");
                 }
-                yield break;
+                return Enumerable.Empty<Symbol>();
             }
 
-            var underlying = symbol.SecurityType.IsOption() ? symbol.Underlying : symbol;
-            var optionsSecurityType = underlying.SecurityType == SecurityType.Index ? SecurityType.IndexOption : SecurityType.Option;
-            var optionStyle = optionsSecurityType.DefaultOptionStyle();
+            // For ?SPXW the root is SPXW. For SPX or ?SPX it is SPX.
+            var root = symbol.SecurityType.IsOption() ? symbol.ID.Symbol : symbol.Value;
+            return GetContracts(root, date.Date)
+                .Select(contract => _symbolMapper.GetLeanOptionSymbol(contract, symbol))
+                .Distinct()
+                .ToList();
+        }
 
-            // just using quote, which is the most inclusive
-            const string endpoint = "list/contracts/option/quote";
-            var queryParameters = new Dictionary<string, string>
+        private IEnumerable<ThetaDataContract> GetContracts(string root, DateTime date)
+        {
+            if (!_useEndOfDayReport)
             {
-                [RequestParameters.StartDate] = date.ConvertToThetaDataDateFormat(),
-                ["root"] = underlying.Value
-            };
-
-            foreach (var option in _restApiClient.ExecuteRequest<BaseResponse<QuoteListContract>>(endpoint, queryParameters).SelectMany(x => x.Response))
-            {
-                yield return _symbolMapper.GetLeanSymbol(underlying.Value, optionsSecurityType, underlying.ID.Market, optionStyle,
-                    option.Expiry, option.Strike, option.Right == "C" ? OptionRight.Call : OptionRight.Put, underlying);
+                try
+                {
+                    return _restApiClient.GetRows<ContractListRow>(ThetaDataEndpoints.OptionListContractsQuote, new Dictionary<string, string>
+                    {
+                        [RequestParameters.Symbol] = root,
+                        [RequestParameters.Date] = date.ConvertToThetaDataDateFormat()
+                    }).Select(row => row.ToContract()).ToList();
+                }
+                catch (ThetaDataRequestException e) when (e.IsEntitlementError)
+                {
+                    _useEndOfDayReport = true;
+                    Log.Trace($"{nameof(ThetaDataOptionChainProvider)}: The plan does not include the contract list, so the chain comes from the end-of-day report. {e.Message}");
+                }
             }
+            return _endOfDayLoader.GetRows(root, date).Select(row => row.Contract!).ToList();
         }
     }
 }
